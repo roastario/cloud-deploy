@@ -1,0 +1,24 @@
+plugins {
+    id 'com.github.johnrengelman.shadow' version '5.1.0'
+    id 'java'
+}
+
+group 'net.corda'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+dependencies {
+    compile 'com.microsoft.azure:azure-keyvault:1.2.1'
+    compile 'com.microsoft.azure:adal4j:1.6.4'
+}
+
+shadowJar {
+    relocate 'okhttp3', 'shadow.okhttp3'
+    archiveName = 'azure-keyvault-with-deps.jar'
+}
