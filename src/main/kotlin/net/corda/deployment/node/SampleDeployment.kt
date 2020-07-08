@@ -1,22 +1,35 @@
 package net.corda.deployment.node
 
+import com.microsoft.azure.credentials.AzureCliCredentials
+import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.KubernetesCluster
+import com.microsoft.rest.LogLevel
 import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.openapi.Configuration
-import io.kubernetes.client.openapi.apis.AppsV1Api
-import io.kubernetes.client.openapi.apis.CoreV1Api
-import io.kubernetes.client.openapi.apis.ExtensionsV1beta1Api
 import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.KubeConfig
+import io.kubernetes.client.util.Yaml
 import java.io.InputStreamReader
+import java.net.URL
 
-private fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
+fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
     val apiClientTo = createdFloatCluster.adminKubeConfigContent().inputStream().use { config ->
         ClientBuilder.kubeconfig(KubeConfig.loadKubeConfig(InputStreamReader(config))).build()
     }
     Configuration.setDefaultApiClient(apiClientTo)
+
+    val l = Yaml.loadAll(
+        URL("https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/static/provider/cloud/deploy.yaml").readText(
+            Charsets.UTF_8
+        )
+    )
+
+    l.forEach { simpleApply.create(it, "ingress-nginx") }
+
+    simpleApply.create(V1NamespaceBuilder().withNewMetadata().withName("helloworld").endMetadata().build())
+
     val aksHelloDeploymentOne = V1DeploymentBuilder()
         .withKind("Deployment")
         .withApiVersion("apps/v1")
@@ -169,25 +182,13 @@ private fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
         .build()
 
 
-    val appsV1Api = AppsV1Api()
-    val coreApi = CoreV1Api()
-    val extensionsApi = ExtensionsV1beta1Api()
-
-//    coreApi.createNamespace(
-//        V1NamespaceBuilder().withNewMetadata().withName("helloworld").endMetadata().build(),
-//        null,
-//        null,
-//        null
-//    )
-
-
     try {
-        appsV1Api.createNamespacedDeployment("helloworld", aksHelloDeploymentOne, "true", null, null)
-        appsV1Api.createNamespacedDeployment("helloworld", aksHelloDeploymentTwo, "true", null, null)
-        coreApi.createNamespacedService("helloworld", helloWorldServiceOne, "true", null, null)
-        coreApi.createNamespacedService("helloworld", helloWorldServiceTwo, "true", null, null)
-        extensionsApi.createNamespacedIngress("helloworld", helloWorldIngress, "true", null, null)
-        extensionsApi.createNamespacedIngress("helloworld", helloWorldStaticIngress, "true", null, null)
+        simpleApply.create(aksHelloDeploymentOne, "helloworld")
+        simpleApply.create(aksHelloDeploymentTwo, "helloworld")
+        simpleApply.create(helloWorldServiceOne, "helloworld")
+        simpleApply.create(helloWorldServiceTwo, "helloworld")
+        simpleApply.create(helloWorldIngress, "helloworld")
+        simpleApply.create(helloWorldStaticIngress, "helloworld")
     } catch (e: ApiException) {
         System.err.println(e.responseBody)
         throw e
@@ -198,4 +199,14 @@ private fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
 
 private fun <A, B> Pair<A, B>.asMap(): Map<A, B> {
     return listOf(this).toMap()
+}
+
+fun main() {
+    val a: Azure = Azure.configure()
+        .withLogLevel(LogLevel.BODY_AND_HEADERS)
+        .authenticate(AzureCliCredentials.create())
+        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
+
+    val byResourceGroup = a.kubernetesClusters().getByResourceGroup("stefano-playground", "test-cluster1jt0o4b-floats")
+    deployHelloWorld(byResourceGroup)
 }

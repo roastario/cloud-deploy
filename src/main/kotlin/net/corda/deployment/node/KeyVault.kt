@@ -103,7 +103,10 @@ fun createPksc12Store(
     }
 }
 
-fun configureServicePrincipalAccessToKeyVault(sp: ServicePrincipal, kv: Vault): RoleAssignment {
+fun configureServicePrincipalAccessToKeyVault(
+    sp: ServicePrincipal,
+    kv: Vault
+): RoleAssignment {
 
     val a: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
@@ -173,45 +176,4 @@ fun configureServicePrincipalAccessToKeyVault(sp: ServicePrincipal, kv: Vault): 
         )
     )
     return createdRole
-}
-
-fun createServicePrincipalWithCert(
-    cert: Certificate,
-    servicePrincipalName: String
-): ServicePrincipal {
-    val a: Azure = Azure.configure()
-        .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(AzureCliCredentials.create())
-        .withDefaultSubscription()
-
-    val createdSP = a.accessManagement().servicePrincipals().define(servicePrincipalName)
-        .withNewApplication("http://${servicePrincipalName}")
-        .withNewRoleInSubscription(BuiltInRole.CONTRIBUTOR, a.subscriptionId())
-        .defineCertificateCredential("cliLogin")
-        .withAsymmetricX509Certificate()
-        .withPublicKey(cert.encoded)
-        .attach()
-        .create()
-
-    return createdSP
-}
-
-fun main() {
-    Security.addProvider(bouncyCastleProvider)
-    val keyPair: KeyPair = generateRSAKeyPair()
-    val cert = createSelfSignedCertificate(keyPair, "CN=CLI-Login")
-    val runId = "testingstefanoagain" + Random().nextInt(128)
-    val servicePrincipal = createServicePrincipalWithCert(cert, runId)
-    val keyVault = createKeyVault(runId)
-    configureServicePrincipalAccessToKeyVault(servicePrincipal, keyVault)
-    val keyStoreFile = File("keyvault_login.p12")
-    val keyAlias = "my-alias"
-    val keystorePassword = "my-password"
-    createPksc12Store(keyPair.private, cert, keyAlias, keystorePassword, keyStoreFile.absolutePath)
-
-    println("CLIENT_ID=${servicePrincipal.applicationId()}")
-    println("KV_URL=${keyVault.vaultUri()}")
-    println("PKSC_FILE=${keyStoreFile.absolutePath}")
-    println("KEY_ALIAS=${keyAlias}")
-    println("KEYSTORE_PWD=${keystorePassword}")
 }
