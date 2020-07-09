@@ -24,6 +24,7 @@ repositories {
     mavenCentral()
     mavenLocal()
     maven { url "https://repo.gradle.org/gradle/libs-releases-local/" }
+    maven { url "https://software.r3.com/artifactory/freighter-dev" }
     maven {
         url "https://software.r3.com/artifactory/r3-corda-releases"
         mavenContent {
