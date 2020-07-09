@@ -6,13 +6,11 @@ RUN apk update && apk upgrade && apk add bash
 RUN addgroup corda && \
     adduser corda -G corda -D -s bash -h /opt/corda
 
-COPY firewall.jar /opt/corda/
-COPY run-firewall.sh /usr/bin/run-firewall
+COPY ha-utilities.jar /opt/corda/
+COPY perform-registration.sh /usr/bin/perform-registration
 COPY licenseAgreementCheck.sh /usr/bin/licenseAgreementCheck
 ENV CONFIG_FOLDER="/etc/corda"
 ENV BASE_DIR="/opt/corda"
-
-USER "corda"
+ENV TRUST_ROOT_PATH="/opt/corda/certificates/network-trust-root.jks"
 
 ENTRYPOINT  ["licenseAgreementCheck"]
-CMD ["run-firewall"]

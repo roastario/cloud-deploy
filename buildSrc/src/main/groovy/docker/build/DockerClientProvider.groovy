@@ -36,7 +36,7 @@ class DockerClientProvider {
                 if (item.stream != null) {
                     System.out.println("" + item.getStream().trim());
                 }
-                Object.onNext(item);
+                super.onNext(item);
             }
         }
         def imageId = dockerClient.buildImageCmd(resourceDir).exec(callback).awaitImageId();

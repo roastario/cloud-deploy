@@ -3,6 +3,7 @@ package net.corda.deployment.node
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
 import com.microsoft.azure.AzureEnvironment
+import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.*
 import com.microsoft.azure.management.containerservice.implementation.KubernetesClusterAgentPoolImpl
@@ -308,36 +309,14 @@ private fun KubernetesCluster.DefinitionStages.WithNetworkProfile.defineLoadBala
 fun main() {
     Security.addProvider(bouncyCastleProvider)
 
-    val azureTenant = System.getenv("TENANT")
-    val mngTokenCred =
-        DeviceCodeTokenCredentials(
-            AzureEnvironment.AZURE,
-            if (azureTenant == null || azureTenant == "null") {
-                "common"
-            } else {
-                azureTenant
-            },
-            DeviceCodeFlow.SCOPES_MANAGEMENT
-        )
-    val graphTokenCred =
-        DeviceCodeTokenCredentials(
-            AzureEnvironment.AZURE,
-            if (azureTenant == null || azureTenant == "null") {
-                "common"
-            } else {
-                azureTenant
-            },
-            DeviceCodeFlow.SCOPES_GRAPH
-        )
-
     val mngAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(mngTokenCred)
+        .authenticate(AzureCliCredentials.create())
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
     val graphAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(graphTokenCred)
+        .authenticate(AzureCliCredentials.create())
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
 //    val list = azure.virtualMachines().list()

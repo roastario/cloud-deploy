@@ -1,3 +1,5 @@
+import docker.build.DockerClientProvider
+
 plugins {
     id 'java'
     id 'org.jetbrains.kotlin.jvm' version '1.3.61'
@@ -39,6 +41,7 @@ repositories {
 
 configurations {
     firewallComponents
+    registrationComponents
 }
 
 dependencies {
@@ -58,6 +61,7 @@ dependencies {
     compile group: 'io.github.classgraph', name: 'classgraph', version: '4.8.87'
 
     firewallComponents group: "com.r3.corda", name: 'corda-firewall', version: '4.5'
+    registrationComponents group: 'com.r3.corda', name: 'corda-tools-ha-utilities', version: '4.5'
 }
 
 compileKotlin {
@@ -67,6 +71,53 @@ compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
 
-//task test(){
-//
-//}
+task buildFirewallImageDir(type: Copy) {
+
+    def resourceDir = new File(project.buildDir, "firewallDockerBuild")
+
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/firewall/Dockerfile").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/run-firewall.sh").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/licenseAgreementCheck.sh").first())
+    into(resourceDir)
+
+    doFirst {
+        resourceDir.deleteDir()
+        resourceDir.mkdirs()
+    }
+
+    doLast {
+        ant.copy file: configurations.firewallComponents.resolve().first(), tofile: new File(resourceDir, "firewall.jar")
+    }
+}
+
+task buildSetupImageDir(type: Copy) {
+    def resourceDir = new File(project.buildDir, "registrationDockerBuild")
+
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/registration/Dockerfile").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/perform-registration.sh").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/licenseAgreementCheck.sh").first())
+    into(resourceDir)
+
+    doFirst {
+        resourceDir.deleteDir()
+        resourceDir.mkdirs()
+    }
+
+    doLast {
+        ant.copy file: configurations.registrationComponents.resolve().first(), tofile: new File(resourceDir, "ha-utilities.jar")
+    }
+}
+
+task buildFirewallImage(dependsOn: buildFirewallImageDir) {
+    def resourceDir = new File(project.buildDir, "firewallDockerBuild")
+    DockerClientProvider.buildDockerImage(resourceDir, "corda/firewall", "latest", false, project)
+}
+
+task buildSetupImage(dependsOn: buildSetupImageDir) {
+    def resourceDir = new File(project.buildDir, "registrationDockerBuild")
+    DockerClientProvider.buildDockerImage(resourceDir, "corda/setup", "latest", false, project)
+}
+
+task buildImages(dependsOn: [buildFirewallImage, buildSetupImage]){
+
+}
