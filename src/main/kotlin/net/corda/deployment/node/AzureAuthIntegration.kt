@@ -54,7 +54,7 @@ class DeviceCodeTokenCredentials(environment: AzureEnvironment, domain: String?)
 object DeviceCodeFlow {
     private const val CLIENT_ID = "2c0737b0-272a-4111-b7de-634b7f6b084b"
 
-    private val defaultScope = setOf("https://management.azure.com/user_impersonation")
+    private val defaultScope = setOf("https://graph.microsoft.com/User.ReadWrite.All")
 
     private const val AUTHORITY = "https://login.microsoftonline.com/common/"
 

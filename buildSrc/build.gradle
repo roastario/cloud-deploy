@@ -1,0 +1,9 @@
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+dependencies {
+    compile group: 'com.github.docker-java', name: 'docker-java', version: '3.2.0-rc5'
+    compile group: 'com.github.docker-java', name: 'docker-java-transport-okhttp', version: '3.2.0-rc5'
+}

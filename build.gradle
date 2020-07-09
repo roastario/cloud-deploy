@@ -3,6 +3,18 @@ plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.3.61'
 }
 
+// You can define this property in ~/.gradle/gradle.properties on your dev box.
+if (!project.hasProperty('cordaArtifactoryUsername') || ext.cordaArtifactoryUsername == null) {
+    ext.cordaArtifactoryUsername = System.getenv('CORDA_ARTIFACTORY_USERNAME')
+            ?: System.getProperty('corda.artifactory.username')
+}
+
+// You can define this property in ~/.gradle/gradle.properties on your dev box.
+if (!project.hasProperty('cordaArtifactoryPassword') || ext.cordaArtifactoryPassword == null) {
+    ext.cordaArtifactoryPassword = System.getenv('CORDA_ARTIFACTORY_PASSWORD')
+            ?: System.getProperty('corda.artifactory.password')
+}
+
 group 'net.corda'
 version '1.0-SNAPSHOT'
 
@@ -12,6 +24,20 @@ repositories {
     mavenCentral()
     mavenLocal()
     maven { url "https://repo.gradle.org/gradle/libs-releases-local/" }
+    maven {
+        url "https://software.r3.com/artifactory/r3-corda-releases"
+        mavenContent {
+            releasesOnly()
+        }
+        credentials {
+            username = cordaArtifactoryUsername
+            password = cordaArtifactoryPassword
+        }
+    }
+}
+
+configurations {
+    firewallComponents
 }
 
 dependencies {
@@ -29,6 +55,8 @@ dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
 
     compile group: 'io.github.classgraph', name: 'classgraph', version: '4.8.87'
+
+    firewallComponents group: "com.r3.corda", name: 'corda-firewall', version: '4.5'
 }
 
 compileKotlin {
@@ -37,3 +65,7 @@ compileKotlin {
 compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
+
+//task test(){
+//
+//}

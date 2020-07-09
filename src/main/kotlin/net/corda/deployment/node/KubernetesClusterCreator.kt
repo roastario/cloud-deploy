@@ -2,6 +2,7 @@ package net.corda.deployment.node
 
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
+import com.microsoft.azure.AzureEnvironment
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.*
@@ -308,11 +309,22 @@ private fun KubernetesCluster.DefinitionStages.WithNetworkProfile.defineLoadBala
 fun main() {
     Security.addProvider(bouncyCastleProvider)
 
+    val azureTenant = System.getenv("TENANT")
+    val tokencred =
+        DeviceCodeTokenCredentials(
+            AzureEnvironment.AZURE, if (azureTenant == null || azureTenant == "null") {
+                "common"
+            } else {
+                azureTenant
+            }
+        )
 
     val azure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(AzureCliCredentials.create())
+        .authenticate(tokencred)
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
+
+//    val list = azure.virtualMachines().list()
 
 
     val randSuffix = Random.nextUInt().toString(36).toLowerCase()
