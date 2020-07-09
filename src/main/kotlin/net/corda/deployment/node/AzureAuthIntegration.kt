@@ -6,7 +6,7 @@ import com.microsoft.azure.credentials.AzureTokenCredentials
 import java.io.File
 import java.net.URI
 
-
+/*
 class TokenCacheAspect(fileName: String) : ITokenCacheAccessAspect {
 
 
@@ -42,44 +42,53 @@ class TokenCacheAspect(fileName: String) : ITokenCacheAccessAspect {
         data = readDataFromFile(fileName)
     }
 }
+*/
 
-class DeviceCodeTokenCredentials(environment: AzureEnvironment, domain: String?) :
+class DeviceCodeTokenCredentials(environment: AzureEnvironment, domain: String?, private val scope: Set<String>? = null) :
     AzureTokenCredentials(environment, domain) {
     val cachingGetter = DeviceCodeFlow
     override fun getToken(resource: String): String {
-        return cachingGetter.acquireTokenDeviceCode(resource).accessToken()
+        return cachingGetter.acquireTokenDeviceCode(resource, scope).accessToken()
     }
 }
 
 object DeviceCodeFlow {
     private const val CLIENT_ID = "2c0737b0-272a-4111-b7de-634b7f6b084b"
 
-    private val defaultScope = setOf("https://graph.microsoft.com/User.ReadWrite.All")
+    //private val defaultScope = setOf("https://graph.microsoft.com/Directory.Read")
+    //private val defaultScope = setOf("https://management.azure.com/user_impersonation")
+    private val defaultScope = setOf("https://graph.windows.net/.default")
+    //private val defaultScope = setOf("https://graph.windows.net/common/applications/user_impersonation")
 
     private const val AUTHORITY = "https://login.microsoftonline.com/common/"
 
+    public val SCOPES_GRAPH = setOf("https://graph.windows.net/.default")
+    public val SCOPES_MANAGEMENT = setOf("https://management.azure.com/user_impersonation")
+
     @Throws(Exception::class)
-    fun acquireTokenDeviceCode(res: String): IAuthenticationResult {
-        val tokenCacheAspect = TokenCacheAspect("sample_cache.json")
+    fun acquireTokenDeviceCode(res: String, scope: Set<String>? = null): IAuthenticationResult {
+        //val tokenCacheAspect = TokenCacheAspect("sample_cache.json")
         val pca = PublicClientApplication.builder(CLIENT_ID)
             .authority(AUTHORITY)
-            .setTokenCacheAccessAspect(tokenCacheAspect)
+            //.setTokenCacheAccessAspect(tokenCacheAspect)
             .build()
         val accountsInCache = pca.accounts.join()
         val account = accountsInCache.filter { !it.username().startsWith("John") }.firstOrNull()
         val result: IAuthenticationResult
-        val scope = defaultScope
-
+        var scopes = scope
+        if(scopes == null) {
+            scopes = defaultScope
+        }
         result = try {
             if (account != null) {
                 val silentParameters = SilentParameters
-                    .builder(scope, account)
+                    .builder(scopes, account)
                     .build()
                 pca.acquireTokenSilently(silentParameters).join()
             } else {
                 val parameters = InteractiveRequestParameters
                     .builder(URI("http://localhost"))
-                    .scopes(scope)
+                    .scopes(scopes)
                     .build();
                 pca.acquireToken(parameters).join()
             }

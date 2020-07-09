@@ -3,7 +3,6 @@ package net.corda.deployment.node
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
 import com.microsoft.azure.AzureEnvironment
-import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.*
 import com.microsoft.azure.management.containerservice.implementation.KubernetesClusterAgentPoolImpl
@@ -23,7 +22,6 @@ import java.io.File
 import java.lang.IllegalStateException
 import java.security.Security
 import java.security.cert.Certificate
-import kotlin.math.abs
 import kotlin.random.Random
 import kotlin.random.nextUInt
 
@@ -37,16 +35,17 @@ data class Clusters(
 )
 
 fun createClusterServicePrincipal(
-    azure: Azure,
+    mngAzure: Azure,
+    graphAzure: Azure,
     randSuffix: String,
     resourceGroup: String
 ): PrincipalAndCredentials {
-    val locatedResourceGroup = azure.resourceGroups().getByName(resourceGroup)
+    val locatedResourceGroup  = mngAzure.resourceGroups().getByName(resourceGroup)
         ?: throw IllegalStateException("no resource group with name: $resourceGroup found")
     val servicePrincipalKeyPair = generateRSAKeyPair()
     val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login")
     val password = RandomStringUtils.randomAscii(16)
-    val createdSP = azure.accessManagement().servicePrincipals().define("testingspforaks$randSuffix")
+    val createdSP = graphAzure.accessManagement().servicePrincipals().define("testingspforaks$randSuffix")
         .withNewApplication("http://testingspforaks${randSuffix}")
         .withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, locatedResourceGroup)
         .definePasswordCredential("cliLoginPwd")
@@ -310,18 +309,35 @@ fun main() {
     Security.addProvider(bouncyCastleProvider)
 
     val azureTenant = System.getenv("TENANT")
-    val tokencred =
+    val mngTokenCred =
         DeviceCodeTokenCredentials(
-            AzureEnvironment.AZURE, if (azureTenant == null || azureTenant == "null") {
+            AzureEnvironment.AZURE,
+            if (azureTenant == null || azureTenant == "null") {
                 "common"
             } else {
                 azureTenant
-            }
+            },
+            DeviceCodeFlow.SCOPES_MANAGEMENT
+        )
+    val graphTokenCred =
+        DeviceCodeTokenCredentials(
+            AzureEnvironment.AZURE,
+            if (azureTenant == null || azureTenant == "null") {
+                "common"
+            } else {
+                azureTenant
+            },
+            DeviceCodeFlow.SCOPES_GRAPH
         )
 
-    val azure: Azure = Azure.configure()
+    val mngAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(tokencred)
+        .authenticate(mngTokenCred)
+        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
+
+    val graphAzure: Azure = Azure.configure()
+        .withLogLevel(LogLevel.BODY_AND_HEADERS)
+        .authenticate(graphTokenCred)
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
 //    val list = azure.virtualMachines().list()
@@ -329,13 +345,14 @@ fun main() {
 
     val randSuffix = Random.nextUInt().toString(36).toLowerCase()
     val (servicePrincipal, servicePrincipalPassword, keypair, cert) = createClusterServicePrincipal(
-        azure,
+        mngAzure,
+        graphAzure,
         randSuffix,
         "stefano-playground"
     )
 
-    val publicIpForAzureRpc = buildPublicIpForAzure("stefano-playground", "rpc-$randSuffix", azure)
-    val publicIpForAzureP2p = buildPublicIpForAzure("stefano-playground", "p2p-$randSuffix", azure)
+    val publicIpForAzureRpc = buildPublicIpForAzure("stefano-playground", "rpc-$randSuffix", mngAzure)
+    val publicIpForAzureP2p = buildPublicIpForAzure("stefano-playground", "p2p-$randSuffix", mngAzure)
 
     val keyVault = createKeyVault("kvtesting-$randSuffix")
     configureServicePrincipalAccessToKeyVault(servicePrincipal, keyVault)
@@ -349,13 +366,13 @@ fun main() {
         publicIpForAzureP2p,
         publicIpForAzureRpc,
         randSuffix,
-        azure,
+        mngAzure,
         servicePrincipal,
         servicePrincipalPassword
     )
 
     val database =
-        allowAllFailures { DbBuilder().buildAzSqlInstance(azure, clusters.clusterNetwork, clusters.nodeSubnetName) }
+        allowAllFailures { DbBuilder().buildAzSqlInstance(mngAzure, clusters.clusterNetwork, clusters.nodeSubnetName) }
     println("Press Enter to deploy hello world").let { readLine() }
     allowAllFailures { deployHelloWorld(clusters.floatCluster) }
 
@@ -363,18 +380,18 @@ fun main() {
     val delete = println("Delete Resources?").let { readLine() }
     if (delete != null && delete.toLowerCase().startsWith("y")) {
         println("DELETING CLUSTERS")
-        allowAllFailures { azure.kubernetesClusters().deleteById(clusters.floatCluster.id()) }
-        allowAllFailures { azure.kubernetesClusters().deleteById(clusters.nodeCluster.id()) }
+        allowAllFailures { mngAzure.kubernetesClusters().deleteById(clusters.floatCluster.id()) }
+        allowAllFailures { mngAzure.kubernetesClusters().deleteById(clusters.nodeCluster.id()) }
         println("DELETING CLUSTER NODE RESOURCE GROUPS")
-        allowAllFailures { azure.resourceGroups().deleteByName(clusters.floatCluster.nodeResourceGroup()) }
-        allowAllFailures { azure.resourceGroups().deleteByName(clusters.nodeCluster.nodeResourceGroup()) }
+        allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.floatCluster.nodeResourceGroup()) }
+        allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.nodeCluster.nodeResourceGroup()) }
         println("DELETING DATABASES")
-        allowAllFailures { azure.sqlServers().deleteById(database?.id()) }
+        allowAllFailures { mngAzure.sqlServers().deleteById(database?.id()) }
         println("DELETING NETWORK")
-        allowAllFailures { azure.networks().deleteById(clusters.clusterNetwork.id()) }
+        allowAllFailures { mngAzure.networks().deleteById(clusters.clusterNetwork.id()) }
         println("DELETING IP ADDRESSES")
-        allowAllFailures { azure.publicIPAddresses().deleteById(publicIpForAzureP2p.id()) }
-        allowAllFailures { azure.publicIPAddresses().deleteById(publicIpForAzureRpc.id()) }
+        allowAllFailures { mngAzure.publicIPAddresses().deleteById(publicIpForAzureP2p.id()) }
+        allowAllFailures { mngAzure.publicIPAddresses().deleteById(publicIpForAzureRpc.id()) }
     }
 }
 
