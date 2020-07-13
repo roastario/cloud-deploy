@@ -45,7 +45,7 @@ fun createClusterServicePrincipal(
         ?: throw IllegalStateException("no resource group with name: $resourceGroup found")
     val servicePrincipalKeyPair = generateRSAKeyPair()
     val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login")
-    val password = RandomStringUtils.randomAscii(16)
+    val password = RandomStringUtils.randomGraph(16)
     val createdSP = graphAzure.accessManagement().servicePrincipals().define("testingspforaks$randSuffix")
         .withNewApplication("http://testingspforaks${randSuffix}")
         .withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, locatedResourceGroup)
@@ -87,7 +87,7 @@ fun createClusters(
         .define("test-cluster${randSuffix}-floats")
         .withRegion(Region.EUROPE_NORTH)
         .withExistingResourceGroup(resourceGroup)
-        .withVersion("1.16.9")
+        .withVersion("1.16.10")
         .withRootUsername("cordamanager")
         .withSshKey(String(ByteArrayOutputStream().also {
             KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
@@ -120,7 +120,7 @@ fun createClusters(
         .define("test-cluster${randSuffix}-nodes")
         .withRegion(Region.EUROPE_NORTH)
         .withExistingResourceGroup(resourceGroup)
-        .withVersion("1.16.9")
+        .withVersion("1.16.10")
         .withRootUsername("cordamanager")
         .withSshKey(String(ByteArrayOutputStream().also {
             KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
@@ -158,42 +158,7 @@ fun createClusters(
 
 }
 
-private fun createNetworkForClusters(
-    azure: Azure,
-    randSuffix: String,
-    locatedResourceGroup: ResourceGroup
-): Triple<String, String, Network> {
-    val nodeSubnetName = "nodeClusterSubNet"
-    val floatSubnetName = "floatClusterSubNet"
-    val createdNetwork = azure.networks().define("stefano-vnet-$randSuffix")
-        .withRegion(Region.EUROPE_NORTH)
-        .withExistingResourceGroup(locatedResourceGroup)
-        .withAddressSpace("192.168.0.0/16")
-        .withSubnet(nodeSubnetName, "192.168.1.0/24")
-        .withSubnet(floatSubnetName, "192.168.2.0/24")
-        .create().also { addSubnetServiceEndPoint(it, nodeSubnetName, "Microsoft.Sql", Region.EUROPE_NORTH, azure) }
-    return Triple(nodeSubnetName, floatSubnetName, createdNetwork)
-}
 
-fun addSubnetServiceEndPoint(
-    it: Network,
-    nodeSubnetName: String,
-    serviceEndPointName: String,
-    region: Region,
-    azure: Azure
-) {
-    val virtualNetworkInner = it.inner()
-    val subnet = (virtualNetworkInner.subnets() ?: mutableListOf()).single { it.name() == nodeSubnetName }
-    subnet.withServiceEndpoints((subnet.serviceEndpoints() ?: mutableListOf()).let { endpointList ->
-        endpointList.add(
-            ServiceEndpointPropertiesFormat().withService(serviceEndPointName).withLocations(
-                listOf(region.name())
-            )
-        )
-        endpointList
-    })
-    azure.networks().inner().createOrUpdate(it.resourceGroupName(), it.name(), virtualNetworkInner)
-}
 
 private fun KubernetesCluster.DefinitionStages.WithCreate.enableRBAC(): KubernetesCluster.DefinitionStages.WithCreate {
     val parent = this as KubernetesClusterImpl
@@ -314,18 +279,13 @@ fun main() {
         .authenticate(AzureCliCredentials.create())
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
-    val graphAzure: Azure = Azure.configure()
-        .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(AzureCliCredentials.create())
-        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
-//    val list = azure.virtualMachines().list()
-
+    val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
 
     val randSuffix = Random.nextUInt().toString(36).toLowerCase()
     val (servicePrincipal, servicePrincipalPassword, keypair, cert) = createClusterServicePrincipal(
         mngAzure,
-        graphAzure,
+        mngAzure,
         randSuffix,
         "stefano-playground"
     )
@@ -339,6 +299,8 @@ fun main() {
     val keyAlias = "my-alias"
     val keystorePassword = "my-password"
     createPksc12Store(keypair.private, cert, keyAlias, keystorePassword, keyStoreFile.absolutePath)
+
+    NetworkCreator(azure = mngAzure, resourceGroup = )
 
     val clusters = createClusters(
         "stefano-playground",
