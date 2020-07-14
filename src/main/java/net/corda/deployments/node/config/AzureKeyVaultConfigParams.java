@@ -10,9 +10,12 @@ public class AzureKeyVaultConfigParams implements SubstitutableSource {
     private final String keyVaultURL;
     private final String keyVaultProtectionMode;
 
-    public static final String SERVICE_PRINCIPAL_CRED_FILE_PATH = "/etc/corda/keyVault.conf";
-    private static final String KEY_PROTECTION_MODE_HARDWARE = "HARDWARE";
-    private static final String KEY_PROTECTION_MODE_SOFTWARE = "SOFTWARE";
+
+    public static String CREDENTIALS_DIR = "/etc/hsm";
+    public static String CREDENTIALS_P12_FILENAME = "az_kv.p12";
+    public static String CREDENTIALS_P12_PATH = CREDENTIALS_DIR = "/" + CREDENTIALS_P12_FILENAME;
+    public static final String KEY_PROTECTION_MODE_HARDWARE = "HARDWARE";
+    public static final String KEY_PROTECTION_MODE_SOFTWARE = "SOFTWARE";
 
     public AzureKeyVaultConfigParams(String servicePrincipalCredentialsFilePath, String servicePrincipalCredentialsFilePassword,
                                      String keyAlias, String keyVaultURL, String keyVaultClientId, String keyVaultProtectionMode) {

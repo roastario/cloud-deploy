@@ -1,4 +1,4 @@
-package net.corda.deployment.node
+package net.corda.deployment.node.networking
 
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.network.Network
@@ -14,15 +14,12 @@ class NetworkCreator(
     val runSuffix: String
 ) {
     fun createNetworkForClusters(
-        azure: Azure,
-        randSuffix: String,
-        locatedResourceGroup: ResourceGroup
     ): ClusterNetwork {
         val nodeSubnetName = "nodeClusterSubNet"
         val floatSubnetName = "floatClusterSubNet"
-        val createdNetwork = azure.networks().define("stefano-vnet-$randSuffix")
-            .withRegion(Region.EUROPE_NORTH)
-            .withExistingResourceGroup(locatedResourceGroup)
+        val createdNetwork = azure.networks().define("stefano-vnet-$runSuffix")
+            .withRegion(resourceGroup.region())
+            .withExistingResourceGroup(resourceGroup)
             .withAddressSpace("192.168.0.0/16")
             .withSubnet(nodeSubnetName, "192.168.1.0/24")
             .withSubnet(floatSubnetName, "192.168.2.0/24")

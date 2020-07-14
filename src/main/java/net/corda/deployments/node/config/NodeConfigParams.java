@@ -10,7 +10,7 @@ public class NodeConfigParams implements SubstitutableSource {
     private final String nodeTrustStorePassword;
     private final String p2pAddress;
     private final Integer p2pPort;
-    private final String artemisServerIp;
+    private final String artemisServerAddress;
     private final Integer artemisServerPort;
     private final String artemisSSLKeyStorePath;
     private final String artemisSSLKeyStorePass;
@@ -30,6 +30,11 @@ public class NodeConfigParams implements SubstitutableSource {
 
 
     private static final String NODE_BASE_DIR = "/opt/corda";
+    public static final String NODE_CONFIG_DIR = "/etc/corda";
+    public static final String NODE_CONFIG_FILENAME = "node.conf";
+    public static final String NODE_AZ_KV_CONFIG_FILENAME = "az-kv.conf";
+    public static final String NODE_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_CONFIG_FILENAME;
+    public static final String NODE_AZ_KV_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_AZ_KV_CONFIG_FILENAME;
     private static final Integer NODE_P2P_PORT = 10200;
     private static final Integer NODE_RPC_PORT = 10001;
     private static final Integer NODE_RPC_ADMIN_PORT = 10002;
@@ -39,7 +44,7 @@ public class NodeConfigParams implements SubstitutableSource {
                             String nodeTrustStorePassword,
                             String p2pAddress,
                             Integer p2pPort,
-                            String artemisServerIp,
+                            String artemisServerAddress,
                             Integer artemisServerPort,
                             String artemisSSLKeyStorePath,
                             String artemisSSLKeyStorePass,
@@ -61,7 +66,7 @@ public class NodeConfigParams implements SubstitutableSource {
         this.nodeTrustStorePassword = nodeTrustStorePassword;
         this.p2pAddress = p2pAddress;
         this.p2pPort = p2pPort;
-        this.artemisServerIp = artemisServerIp;
+        this.artemisServerAddress = artemisServerAddress;
         this.artemisServerPort = artemisServerPort;
         this.artemisSSLKeyStorePath = artemisSSLKeyStorePath;
         this.artemisSSLKeyStorePass = artemisSSLKeyStorePass;
@@ -100,8 +105,8 @@ public class NodeConfigParams implements SubstitutableSource {
         return p2pPort;
     }
 
-    public String getArtemisServerIp() {
-        return artemisServerIp;
+    public String getArtemisServerAddress() {
+        return artemisServerAddress;
     }
 
     public Integer getArtemisServerPort() {
@@ -172,7 +177,6 @@ public class NodeConfigParams implements SubstitutableSource {
         return new NodeConfigParamsBuilder();
     }
 
-
     public static final class NodeConfigParamsBuilder {
         private String baseDir;
         private String x500Name;
@@ -180,7 +184,7 @@ public class NodeConfigParams implements SubstitutableSource {
         private String nodeTrustStorePassword;
         private String p2pAddress;
         private Integer p2pPort;
-        private String artemisServerIp;
+        private String artemisServerAddress;
         private Integer artemisServerPort;
         private String artemisSSLKeyStorePath;
         private String artemisSSLKeyStorePass;
@@ -232,8 +236,8 @@ public class NodeConfigParams implements SubstitutableSource {
             return this;
         }
 
-        public NodeConfigParamsBuilder withArtemisServerIp(String artemisServerIp) {
-            this.artemisServerIp = artemisServerIp;
+        public NodeConfigParamsBuilder withArtemisServerAddress(String artemisServerAddress) {
+            this.artemisServerAddress = artemisServerAddress;
             return this;
         }
 
@@ -319,7 +323,7 @@ public class NodeConfigParams implements SubstitutableSource {
 
         public NodeConfigParams build() {
             return new NodeConfigParams(x500Name, nodeSSLKeystorePassword, nodeTrustStorePassword, p2pAddress, p2pPort,
-                    artemisServerIp, artemisServerPort, artemisSSLKeyStorePath, artemisSSLKeyStorePass, artemisTrustStorePath,
+                    artemisServerAddress, artemisServerPort, artemisSSLKeyStorePath, artemisSSLKeyStorePass, artemisTrustStorePath,
                     artemisTrustStorePass, rpcPort, rpcAdminPort, doormanURL, networkMapURL, rpcUsername, rpcPassword, dataSourceClassName,
                     dataSourceURL, dataSourceUsername, dataSourcePassword, azureKeyVaultConfPath);
         }

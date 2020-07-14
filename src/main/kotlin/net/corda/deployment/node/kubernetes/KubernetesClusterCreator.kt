@@ -1,30 +1,125 @@
-package net.corda.deployment.node
+package net.corda.deployment.node.kubernetes
 
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
-import com.microsoft.azure.AzureEnvironment
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.*
 import com.microsoft.azure.management.containerservice.implementation.KubernetesClusterAgentPoolImpl
 import com.microsoft.azure.management.containerservice.implementation.KubernetesClusterImpl
-import com.microsoft.azure.management.graphrbac.BuiltInRole
-import com.microsoft.azure.management.graphrbac.ServicePrincipal
 import com.microsoft.azure.management.network.Network
 import com.microsoft.azure.management.network.PublicIPAddress
-import com.microsoft.azure.management.network.ServiceEndpointPropertiesFormat
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
 import io.kubernetes.client.openapi.ApiException
-import org.apache.commons.lang3.RandomStringUtils
+import net.corda.deployment.node.database.SqlServerCreator
+import net.corda.deployment.node.deployHelloWorld
+import net.corda.deployment.node.hsm.KeyVaultCreator
+import net.corda.deployment.node.networking.ClusterNetwork
+import net.corda.deployment.node.networking.NetworkCreator
+import net.corda.deployment.node.networking.PublicIpCreator
+import net.corda.deployment.node.principals.PrincipalAndCredentials
+import net.corda.deployment.node.principals.ServicePrincipalCreator
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.lang.IllegalStateException
 import java.security.Security
-import java.security.cert.Certificate
 import kotlin.random.Random
 import kotlin.random.nextUInt
+
+class KubernetesClusterCreator(
+    val azure: Azure,
+    val resourceGroup: ResourceGroup,
+    val runSuffix: String
+) {
+    fun createClusters(
+        p2pIpAddress: PublicIPAddress,
+        rpcIPAddress: PublicIPAddress,
+        servicePrincipal: PrincipalAndCredentials,
+        network: ClusterNetwork
+    ): Clusters {
+
+        val createdNetwork = network.createdNetwork
+        val floatSubnetName = network.floatSubnetName
+        val nodeSubnetName = network.nodeSubnetName
+
+        val floatClusterCreate = azure.kubernetesClusters()
+            .define("test-cluster${runSuffix}-floats")
+            .withRegion(resourceGroup.region())
+            .withExistingResourceGroup(resourceGroup)
+            .withVersion("1.16.10")
+            .withRootUsername("cordamanager")
+            .withSshKey(String(ByteArrayOutputStream().also {
+                KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
+            }.toByteArray()))
+            .withServicePrincipalClientId(servicePrincipal.servicePrincipal.applicationId())
+            .withServicePrincipalSecret(servicePrincipal.servicePrincipalPassword)
+            .defineAgentPool("floatsonly")
+            .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B2MS)
+            .withMode(AgentPoolMode.SYSTEM)
+            .withOSType(OSType.LINUX)
+            .withAgentPoolVirtualMachineCount(1)
+            .withAgentPoolType(AgentPoolType.VIRTUAL_MACHINE_SCALE_SETS)
+            .withVirtualNetwork(createdNetwork.id(), floatSubnetName)
+            .withAutoScale(1, 10)
+            .attach()
+            .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
+            .withDnsPrefix("test-cluster-stefano-floats-${runSuffix}")
+            .defineLoadBalancerAwareNetworkProfile()
+            .withLoadBalancerSku(LoadBalancerSku.STANDARD)
+            .withLoadBalancerIp(p2pIpAddress)
+            .withServiceCidr("10.0.0.0/16")
+            .withDnsServiceIP("10.0.0.10")
+            .withPodCidr("10.244.0.0/16")
+            .withDockerBridgeCidr("172.17.0.1/16")
+            .attach()
+//            .enablePodSecurityPolicies()
+            .enableRBAC()
+
+        val nodeClusterCreate = azure.kubernetesClusters()
+            .define("test-cluster${runSuffix}-nodes")
+            .withRegion(resourceGroup.region())
+            .withExistingResourceGroup(resourceGroup)
+            .withVersion("1.16.10")
+            .withRootUsername("cordamanager")
+            .withSshKey(String(ByteArrayOutputStream().also {
+                KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
+            }.toByteArray()))
+            .withServicePrincipalClientId(servicePrincipal.servicePrincipal.applicationId())
+            .withServicePrincipalSecret(servicePrincipal.servicePrincipalPassword)
+            .defineAgentPool("nofloats")
+            .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B4MS)
+            .withMode(AgentPoolMode.SYSTEM)
+            .withOSType(OSType.LINUX)
+            .withAgentPoolVirtualMachineCount(1)
+            .withAgentPoolType(AgentPoolType.VIRTUAL_MACHINE_SCALE_SETS)
+            .withVirtualNetwork(createdNetwork.id(), nodeSubnetName)
+            .withAutoScale(1, 10)
+            .attach()
+            .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
+            .withDnsPrefix("test-cluster-stefano-nodes-${runSuffix}")
+            .defineLoadBalancerAwareNetworkProfile()
+            .withLoadBalancerSku(LoadBalancerSku.STANDARD)
+            .withLoadBalancerIp(rpcIPAddress)
+            .withServiceCidr("10.0.0.0/16")
+            .withDnsServiceIP("10.0.0.10")
+            .withPodCidr("10.244.0.0/16")
+            .withDockerBridgeCidr("172.17.0.1/16")
+            .attach()
+//            .enablePodSecurityPolicies()
+            .enableRBAC()
+
+
+        val createdFloatCluster = floatClusterCreate.create()
+        val createdNodeCluster = nodeClusterCreate.create()
+
+        return Clusters(createdNodeCluster, createdFloatCluster, createdNetwork, nodeSubnetName, floatSubnetName)
+
+
+    }
+
+}
 
 
 data class Clusters(
@@ -34,130 +129,6 @@ data class Clusters(
     val nodeSubnetName: String,
     val floatSubnetName: String
 )
-
-fun createClusterServicePrincipal(
-    mngAzure: Azure,
-    graphAzure: Azure,
-    randSuffix: String,
-    resourceGroup: String
-): PrincipalAndCredentials {
-    val locatedResourceGroup  = mngAzure.resourceGroups().getByName(resourceGroup)
-        ?: throw IllegalStateException("no resource group with name: $resourceGroup found")
-    val servicePrincipalKeyPair = generateRSAKeyPair()
-    val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login")
-    val password = RandomStringUtils.randomGraph(16)
-    val createdSP = graphAzure.accessManagement().servicePrincipals().define("testingspforaks$randSuffix")
-        .withNewApplication("http://testingspforaks${randSuffix}")
-        .withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, locatedResourceGroup)
-        .definePasswordCredential("cliLoginPwd")
-        .withPasswordValue(password)
-        .attach()
-        .defineCertificateCredential("cliLoginCert")
-        .withAsymmetricX509Certificate()
-        .withPublicKey(servicePrincipalCert.encoded)
-        .attach()
-        .create()
-
-    return PrincipalAndCredentials(createdSP, password, servicePrincipalKeyPair, servicePrincipalCert)
-}
-
-data class PrincipalAndCredentials(
-    val createdSP: ServicePrincipal,
-    val password: String,
-    val keyPair: java.security.KeyPair,
-    val servicePrincipalCert: Certificate
-)
-
-fun createClusters(
-    resourceGroup: String,
-    p2pIpAddress: PublicIPAddress,
-    rpcIPAddress: PublicIPAddress,
-    randSuffix: String,
-    azure: Azure,
-    servicePrincipal: ServicePrincipal,
-    servicePrincipalPassword: String
-): Clusters {
-    val locatedResourceGroup = azure.resourceGroups().getByName(resourceGroup)
-    val (nodeSubnetName, floatSubnetName, createdNetwork) = createNetworkForClusters(
-        azure,
-        randSuffix,
-        locatedResourceGroup
-    )
-    val floatClusterCreate = azure.kubernetesClusters()
-        .define("test-cluster${randSuffix}-floats")
-        .withRegion(Region.EUROPE_NORTH)
-        .withExistingResourceGroup(resourceGroup)
-        .withVersion("1.16.10")
-        .withRootUsername("cordamanager")
-        .withSshKey(String(ByteArrayOutputStream().also {
-            KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
-        }.toByteArray()))
-        .withServicePrincipalClientId(servicePrincipal.applicationId())
-        .withServicePrincipalSecret(servicePrincipalPassword)
-        .defineAgentPool("floatsonly")
-        .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B2MS)
-        .withMode(AgentPoolMode.SYSTEM)
-        .withOSType(OSType.LINUX)
-        .withAgentPoolVirtualMachineCount(1)
-        .withAgentPoolType(AgentPoolType.VIRTUAL_MACHINE_SCALE_SETS)
-        .withVirtualNetwork(createdNetwork.id(), floatSubnetName)
-        .withAutoScale(1, 10)
-        .attach()
-        .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
-        .withDnsPrefix("test-cluster-stefano-floats-${randSuffix}")
-        .defineLoadBalancerAwareNetworkProfile()
-        .withLoadBalancerSku(LoadBalancerSku.STANDARD)
-        .withLoadBalancerIp(p2pIpAddress)
-        .withServiceCidr("10.0.0.0/16")
-        .withDnsServiceIP("10.0.0.10")
-        .withPodCidr("10.244.0.0/16")
-        .withDockerBridgeCidr("172.17.0.1/16")
-        .attach()
-//            .enablePodSecurityPolicies()
-        .enableRBAC()
-
-    val nodeClusterCreate = azure.kubernetesClusters()
-        .define("test-cluster${randSuffix}-nodes")
-        .withRegion(Region.EUROPE_NORTH)
-        .withExistingResourceGroup(resourceGroup)
-        .withVersion("1.16.10")
-        .withRootUsername("cordamanager")
-        .withSshKey(String(ByteArrayOutputStream().also {
-            KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
-        }.toByteArray()))
-        .withServicePrincipalClientId(servicePrincipal.applicationId())
-        .withServicePrincipalSecret(servicePrincipalPassword)
-        .defineAgentPool("nofloats")
-        .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B4MS)
-        .withMode(AgentPoolMode.SYSTEM)
-        .withOSType(OSType.LINUX)
-        .withAgentPoolVirtualMachineCount(1)
-        .withAgentPoolType(AgentPoolType.VIRTUAL_MACHINE_SCALE_SETS)
-        .withVirtualNetwork(createdNetwork.id(), nodeSubnetName)
-        .withAutoScale(1, 10)
-        .attach()
-        .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
-        .withDnsPrefix("test-cluster-stefano-floats-${randSuffix}")
-        .defineLoadBalancerAwareNetworkProfile()
-        .withLoadBalancerSku(LoadBalancerSku.STANDARD)
-        .withLoadBalancerIp(rpcIPAddress)
-        .withServiceCidr("10.0.0.0/16")
-        .withDnsServiceIP("10.0.0.10")
-        .withPodCidr("10.244.0.0/16")
-        .withDockerBridgeCidr("172.17.0.1/16")
-        .attach()
-//            .enablePodSecurityPolicies()
-        .enableRBAC()
-
-
-    val createdFloatCluster = floatClusterCreate.create()
-    val createdNodeCluster = nodeClusterCreate.create()
-
-    return Clusters(createdNodeCluster, createdFloatCluster, createdNetwork, nodeSubnetName, floatSubnetName)
-
-
-}
-
 
 
 private fun KubernetesCluster.DefinitionStages.WithCreate.enableRBAC(): KubernetesCluster.DefinitionStages.WithCreate {
@@ -272,6 +243,7 @@ private fun KubernetesCluster.DefinitionStages.WithNetworkProfile.defineLoadBala
 
 @ExperimentalUnsignedTypes
 fun main() {
+    val bouncyCastleProvider = BouncyCastleProvider()
     Security.addProvider(bouncyCastleProvider)
 
     val mngAzure: Azure = Azure.configure()
@@ -281,39 +253,30 @@ fun main() {
 
 
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
-
     val randSuffix = Random.nextUInt().toString(36).toLowerCase()
-    val (servicePrincipal, servicePrincipalPassword, keypair, cert) = createClusterServicePrincipal(
-        mngAzure,
-        mngAzure,
-        randSuffix,
-        "stefano-playground"
+
+    val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+    val servicePrincipalCreator = ServicePrincipalCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+    val keyVaultCreator = KeyVaultCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+    val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+    val dbCreator = SqlServerCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+    val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
+
+    val servicePrincipal = servicePrincipalCreator.createClusterServicePrincipal()
+    val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(servicePrincipal)
+    val networkForClusters = networkCreator.createNetworkForClusters()
+    val database = dbCreator.createSQLServerDBForCorda(networkForClusters)
+
+    val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
+    val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
+
+    val clusters = clusterCreator.createClusters(
+        p2pIpAddress = publicIpForAzureP2p,
+        rpcIPAddress = publicIpForAzureRpc,
+        servicePrincipal = servicePrincipal,
+        network = networkForClusters
     )
 
-    val publicIpForAzureRpc = buildPublicIpForAzure("stefano-playground", "rpc-$randSuffix", mngAzure)
-    val publicIpForAzureP2p = buildPublicIpForAzure("stefano-playground", "p2p-$randSuffix", mngAzure)
-
-    val keyVault = createKeyVault("kvtesting-$randSuffix")
-    configureServicePrincipalAccessToKeyVault(servicePrincipal, keyVault)
-    val keyStoreFile = File("keyvault_login.p12")
-    val keyAlias = "my-alias"
-    val keystorePassword = "my-password"
-    createPksc12Store(keypair.private, cert, keyAlias, keystorePassword, keyStoreFile.absolutePath)
-
-    NetworkCreator(azure = mngAzure, resourceGroup = )
-
-    val clusters = createClusters(
-        "stefano-playground",
-        publicIpForAzureP2p,
-        publicIpForAzureRpc,
-        randSuffix,
-        mngAzure,
-        servicePrincipal,
-        servicePrincipalPassword
-    )
-
-    val database =
-        allowAllFailures { DbBuilder().buildAzSqlInstance(mngAzure, clusters.clusterNetwork, clusters.nodeSubnetName) }
     println("Press Enter to deploy hello world").let { readLine() }
     allowAllFailures { deployHelloWorld(clusters.floatCluster) }
 
@@ -327,7 +290,7 @@ fun main() {
         allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.floatCluster.nodeResourceGroup()) }
         allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.nodeCluster.nodeResourceGroup()) }
         println("DELETING DATABASES")
-        allowAllFailures { mngAzure.sqlServers().deleteById(database?.id()) }
+        allowAllFailures { mngAzure.sqlServers().deleteById(database.sqlServer.id()) }
         println("DELETING NETWORK")
         allowAllFailures { mngAzure.networks().deleteById(clusters.clusterNetwork.id()) }
         println("DELETING IP ADDRESSES")

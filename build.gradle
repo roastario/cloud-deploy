@@ -22,6 +22,8 @@ version '1.0-SNAPSHOT'
 
 sourceCompatibility = 1.8
 
+evaluationDependsOn(":azure-keyvault-jar-builder")
+
 repositories {
     mavenCentral()
     mavenLocal()
@@ -42,11 +44,12 @@ repositories {
 configurations {
     firewallComponents
     registrationComponents
+    registrationDependency
 }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    implementation 'io.kubernetes:client-java:8.0.0'
+    implementation 'io.kubernetes:client-java:8.0.2'
     implementation group: 'org.slf4j', name: 'slf4j-log4j12', version: '1.7.30'
     implementation group: 'com.microsoft.azure', name: 'azure', version: '1.35.0'
     implementation group: 'com.microsoft.azure', name: 'msal4j', version: '1.4.0'
@@ -59,12 +62,13 @@ dependencies {
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.10'
     implementation group: 'commons-io', name: 'commons-io', version: '2.7'
     implementation group: 'org.apache.commons', name: 'commons-text', version: '1.8'
-
     testCompile group: 'junit', name: 'junit', version: '4.12'
 
 
     firewallComponents group: "com.r3.corda", name: 'corda-firewall', version: '4.5'
     registrationComponents group: 'com.r3.corda', name: 'corda-tools-ha-utilities', version: '4.5'
+    registrationDependency group: 'com.microsoft.sqlserver', name: 'mssql-jdbc', version: '6.4.0.jre8'
+    registrationDependency files(project(":azure-keyvault-jar-builder").shadowJar)
 }
 
 compileKotlin {
@@ -93,8 +97,9 @@ task buildFirewallImageDir(type: Copy) {
     }
 }
 
-task buildSetupImageDir(type: Copy) {
+task buildSetupImageDir(type: Copy, dependsOn: [project(":azure-keyvault-jar-builder").shadowJar]) {
     def resourceDir = new File(project.buildDir, "registrationDockerBuild")
+    def driversDir = new File(resourceDir, "drivers")
 
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/registration/Dockerfile").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/perform-registration.sh").first())
@@ -108,12 +113,15 @@ task buildSetupImageDir(type: Copy) {
 
     doLast {
         ant.copy file: configurations.registrationComponents.resolve().first(), tofile: new File(resourceDir, "ha-utilities.jar")
+        configurations.registrationDependency.resolve().forEach {
+            ant.copy file: it, tofile: new File(driversDir, it.name)
+        }
     }
 }
 
 task buildFirewallImage(dependsOn: buildFirewallImageDir) {
     def resourceDir = new File(project.buildDir, "firewallDockerBuild")
-    doLast{
+    doLast {
         DockerClientProvider.buildDockerImage(resourceDir, "corda/firewall", "latest", false, project)
     }
 
@@ -121,11 +129,11 @@ task buildFirewallImage(dependsOn: buildFirewallImageDir) {
 
 task buildSetupImage(dependsOn: buildSetupImageDir) {
     def resourceDir = new File(project.buildDir, "registrationDockerBuild")
-    doLast{
+    doLast {
         DockerClientProvider.buildDockerImage(resourceDir, "corda/setup", "latest", false, project)
     }
 }
 
-task buildImages(dependsOn: [buildFirewallImage, buildSetupImage]){
+task buildImages(dependsOn: [buildFirewallImage, buildSetupImage]) {
 
 }

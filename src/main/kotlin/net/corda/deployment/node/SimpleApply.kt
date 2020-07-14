@@ -5,6 +5,7 @@ import io.github.classgraph.ClassInfo
 import io.github.classgraph.MethodInfo
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1Namespace
+import net.corda.deployment.node.kubernetes.allowAllFailures
 import java.lang.IllegalStateException
 import java.util.*
 import kotlin.collections.HashMap

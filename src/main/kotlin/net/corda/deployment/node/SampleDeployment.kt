@@ -1,18 +1,19 @@
 package net.corda.deployment.node
 
-import com.microsoft.azure.credentials.AzureCliCredentials
-import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.containerservice.KubernetesCluster
-import com.microsoft.rest.LogLevel
 import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.openapi.Configuration
+import io.kubernetes.client.openapi.apis.BatchV1Api
+import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.KubeConfig
 import io.kubernetes.client.util.Yaml
 import java.io.InputStreamReader
 import java.net.URL
+import java.time.Instant
+
 
 fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
     val apiClientTo = createdFloatCluster.adminKubeConfigContent().inputStream().use { config ->
@@ -27,6 +28,22 @@ fun deployHelloWorld(createdFloatCluster: KubernetesCluster) {
     )
 
     l.forEach { simpleApply.create(it, "ingress-nginx") }
+    val now = Instant.now()
+    val coreV1Api = CoreV1Api()
+    while (Instant.now().isBefore(now.plusSeconds(500))) {
+        val listNamespacedPod = coreV1Api.listNamespacedPod(
+            "ingress-nginx", null, null, null, null,
+            "app.kubernetes.io/component=controller", 10, null, 30, null
+        )
+        val controllerPodStatus = listNamespacedPod.items.firstOrNull()?.status?.containerStatuses?.firstOrNull { it.ready }?.ready
+        if (controllerPodStatus == true) {
+            break
+        } else {
+            println("Waiting for NGINX ingress controller to be in Running state")
+        }
+        Thread.sleep(500)
+    }
+
 
     simpleApply.create(V1NamespaceBuilder().withNewMetadata().withName("helloworld").endMetadata().build())
 
@@ -202,11 +219,21 @@ private fun <A, B> Pair<A, B>.asMap(): Map<A, B> {
 }
 
 fun main() {
-    val a: Azure = Azure.configure()
-        .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(AzureCliCredentials.create())
-        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
-    val byResourceGroup = a.kubernetesClusters().getByResourceGroup("stefano-playground", "test-cluster1jt0o4b-floats")
-    deployHelloWorld(byResourceGroup)
+    val client = ClientBuilder.defaultClient()
+    Configuration.setDefaultApiClient(client)
+    val now = Instant.now()
+    val coreV1Api = CoreV1Api()
+    val batchV1Api = BatchV1Api()
+    while (Instant.now().isBefore(now.plusSeconds(500))) {
+        val listNamespacedPod = coreV1Api.listNamespacedPod(
+            "ingress-nginx", null, null, null, null,
+            "app.kubernetes.io/component=controller", 10, null, 30, null
+        )
+        val controllerPodStatus = listNamespacedPod.items.firstOrNull()?.status?.phase
+        if (controllerPodStatus == "Running") {
+            break
+        }
+        Thread.sleep(100)
+    }
 }
