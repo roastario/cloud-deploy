@@ -3,8 +3,11 @@ package net.corda.deployment.node
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import io.github.classgraph.MethodInfo
+import io.kubernetes.client.openapi.ApiClient
+import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1Namespace
+import io.kubernetes.client.util.ClientBuilder
 import net.corda.deployment.node.kubernetes.allowAllFailures
 import java.lang.IllegalStateException
 import java.util.*
@@ -89,27 +92,46 @@ val methodMap: Lazy<HashMap<Class<*>, PriorityQueue<ApiClassAndMethodPair>>> = l
 }
 
 interface SimpleApplier {
-    fun create(o: Any, namespace: String? = null)
+    fun create(o: Any, namespace: String = "default", apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = true })
+    fun apply(
+        o: List<Any>,
+        namespace: String = "default",
+        apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = true }
+    )
 }
 
 val simpleApply = object : SimpleApplier {
-    override fun create(o: Any, namespace: String?) {
+    override fun create(o: Any, namespace: String, apiClient: ApiClient) {
         when (o.javaClass) {
             in methodMap.value -> {
                 val info = methodMap.value[o.javaClass]!!.first()
                 val apiClass = Class.forName(info.apiClassInfo.name)
-                val apiInstance = apiClass.newInstance()
+                val apiInstance = apiClass.getConstructor(ApiClient::class.java).newInstance(apiClient)
                 val method = info.createMethod.loadClassAndGetMethod()
                 println("creating: ${o}")
                 if (info.namespaced) {
-                    allowAllFailures { method.invoke(apiInstance, namespace, o, null, null, null) }
+                    try {
+                        method.invoke(apiInstance, namespace, o, null, null, null)
+                    } catch (ae: ApiException) {
+                        System.err.println(ae.responseBody)
+                        throw ae
+                    }
                 } else {
-                    allowAllFailures{ method.invoke(apiInstance, o, null, null, null) }
+                    try {
+                        method.invoke(apiInstance, o, null, null, null)
+                    } catch (ae: ApiException) {
+                        System.err.println(ae.responseBody)
+                        throw ae
+                    }
                 }
             }
             else -> {
                 throw IllegalStateException("unknown type: " + o.javaClass.canonicalName)
             }
         }
+    }
+
+    override fun apply(o: List<Any>, namespace: String, apiClient: ApiClient) {
+        o.forEach { create(it, namespace, apiClient) }
     }
 }

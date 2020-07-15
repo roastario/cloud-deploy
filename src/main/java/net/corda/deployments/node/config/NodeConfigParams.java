@@ -6,6 +6,7 @@ import net.corda.deployments.node.config.SubstitutableSource.SubstitutionTarget;
 public class NodeConfigParams implements SubstitutableSource {
 
     private final String x500Name;
+    private final String emailAddress;
     private final String nodeSSLKeystorePassword;
     private final String nodeTrustStorePassword;
     private final String p2pAddress;
@@ -29,17 +30,21 @@ public class NodeConfigParams implements SubstitutableSource {
     private final String azureKeyVaultConfPath;
 
 
-    private static final String NODE_BASE_DIR = "/opt/corda";
+    public static final String NODE_BASE_DIR = "/opt/corda";
     public static final String NODE_CONFIG_DIR = "/etc/corda";
     public static final String NODE_CONFIG_FILENAME = "node.conf";
     public static final String NODE_AZ_KV_CONFIG_FILENAME = "az-kv.conf";
     public static final String NODE_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_CONFIG_FILENAME;
     public static final String NODE_AZ_KV_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_AZ_KV_CONFIG_FILENAME;
+    public static final String NODE_CERTIFICATES_DIR = NODE_BASE_DIR + "/" + "certificates";
     private static final Integer NODE_P2P_PORT = 10200;
     private static final Integer NODE_RPC_PORT = 10001;
     private static final Integer NODE_RPC_ADMIN_PORT = 10002;
+    public static final String NODE_NETWORK_TRUST_ROOT_FILENAME = "network-trust-root.jks";
+    public static final String NODE_NETWORK_TRUST_ROOT_PATH = NODE_CERTIFICATES_DIR + "/" + NODE_NETWORK_TRUST_ROOT_FILENAME;
 
     public NodeConfigParams(String x500Name,
+                            String emailAddress,
                             String nodeSSLKeystorePassword,
                             String nodeTrustStorePassword,
                             String p2pAddress,
@@ -62,6 +67,7 @@ public class NodeConfigParams implements SubstitutableSource {
                             String dataSourcePassword,
                             String azureKeyVaultConfPath) {
         this.x500Name = x500Name;
+        this.emailAddress = emailAddress;
         this.nodeSSLKeystorePassword = nodeSSLKeystorePassword;
         this.nodeTrustStorePassword = nodeTrustStorePassword;
         this.p2pAddress = p2pAddress;
@@ -87,6 +93,10 @@ public class NodeConfigParams implements SubstitutableSource {
 
     public String getX500Name() {
         return x500Name;
+    }
+
+    public String getEmailAddress() {
+        return emailAddress;
     }
 
     public String getNodeSSLKeystorePassword() {
@@ -179,6 +189,7 @@ public class NodeConfigParams implements SubstitutableSource {
 
     public static final class NodeConfigParamsBuilder {
         private String baseDir;
+        private String emailAddress;
         private String x500Name;
         private String nodeSSLKeystorePassword;
         private String nodeTrustStorePassword;
@@ -213,6 +224,11 @@ public class NodeConfigParams implements SubstitutableSource {
 
         public NodeConfigParamsBuilder withX500Name(String x500Name) {
             this.x500Name = x500Name;
+            return this;
+        }
+
+        public NodeConfigParamsBuilder withEmailAddress(String emailAddress) {
+            this.emailAddress = emailAddress;
             return this;
         }
 
@@ -322,7 +338,7 @@ public class NodeConfigParams implements SubstitutableSource {
         }
 
         public NodeConfigParams build() {
-            return new NodeConfigParams(x500Name, nodeSSLKeystorePassword, nodeTrustStorePassword, p2pAddress, p2pPort,
+            return new NodeConfigParams(x500Name, emailAddress, nodeSSLKeystorePassword, nodeTrustStorePassword, p2pAddress, p2pPort,
                     artemisServerAddress, artemisServerPort, artemisSSLKeyStorePath, artemisSSLKeyStorePass, artemisTrustStorePath,
                     artemisTrustStorePass, rpcPort, rpcAdminPort, doormanURL, networkMapURL, rpcUsername, rpcPassword, dataSourceClassName,
                     dataSourceURL, dataSourceUsername, dataSourcePassword, azureKeyVaultConfPath);

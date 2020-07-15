@@ -42,7 +42,8 @@ class ServicePrincipalCreator(private val azure: Azure, private val resourceGrou
             .attach()
             .create()
 
-        val p12KeyStorePassword = RandomStringUtils.randomGraph(16)
+        //must be alphanumeric to avoid issues with escaping during config parsing
+        val p12KeyStorePassword = RandomStringUtils.randomAlphanumeric(24)
         val pemFile = generatePemFile(servicePrincipalKeyPair, servicePrincipalCert)
         val keyAlias = "key-vault-login-key"
         val p12File = createPksc12Store(servicePrincipalKeyPair.private, servicePrincipalCert, keyAlias, p12KeyStorePassword)

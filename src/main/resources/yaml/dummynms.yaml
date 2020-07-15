@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: testingzone
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: networkservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: networkservices
+  template:
+    metadata:
+      labels:
+        run: networkservices
+    spec:
+      containers:
+        - args:
+            - --minimumPlatformVersion=4
+          command:
+            - /start.sh
+          env:
+            - name: PUBLIC_ADDRESS
+              value: networkservices
+          image: roastario/notary-and-network-map:4.0
+          imagePullPolicy: IfNotPresent
+          name: networkservices
+          ports:
+            - containerPort: 10200
+              name: notaryport
+            - containerPort: 8080
+              name: networkmapport
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 500m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: networkservices
+  name: networkservices
+spec:
+  ports:
+    - name: notaryport
+      port: 10200
+      protocol: TCP
+    - name: networkmapport
+      port: 8080
+      protocol: TCP
+  selector:
+    run: networkservices
+---
