@@ -23,19 +23,21 @@ class SecretCreator {
 
             //as secrets are base64 we USUALLY would encode them as base64, but due to k8s-sdk "feature" it encodes them for you automatically
             //Base64.getEncoder().encode(it.value.toByteArray())
-
-            val coreV1Api = CoreV1Api(client)
             val encodedSecrets = secrets.map { it.key to it.value.toByteArray(Charsets.UTF_8) }.toMap()
+            return createByteArraySecret(name, encodedSecrets, namespace, client)
+        }
 
+        fun createByteArraySecret(secretsName: String, secrets: Map<String, ByteArray>, namespace: String, client: ApiClient): V1Secret {
+            val coreV1Api = CoreV1Api(client)
             val secret = V1SecretBuilder()
                 .withApiVersion("v1")
                 .withKind("Secret")
                 .withNewMetadata()
                 .withCreationTimestamp(null)
-                .withName(name)
+                .withName(secretsName)
                 .withNamespace(namespace)
                 .endMetadata()
-                .withData(encodedSecrets)
+                .withData(secrets)
                 .withType("Opaque")
                 .build()
 
@@ -45,8 +47,6 @@ class SecretCreator {
                 println(e.responseBody)
                 throw e
             }
-
-
         }
 
     }

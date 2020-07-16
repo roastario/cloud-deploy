@@ -11,6 +11,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.util.io.pem.PemObject
 import org.bouncycastle.util.io.pem.PemWriter
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.FileWriter
@@ -46,14 +47,14 @@ class ServicePrincipalCreator(private val azure: Azure, private val resourceGrou
         val p12KeyStorePassword = RandomStringUtils.randomAlphanumeric(24)
         val pemFile = generatePemFile(servicePrincipalKeyPair, servicePrincipalCert)
         val keyAlias = "key-vault-login-key"
-        val p12File = createPksc12Store(servicePrincipalKeyPair.private, servicePrincipalCert, keyAlias, p12KeyStorePassword)
+        val p12Bytes = createPksc12Store(servicePrincipalKeyPair.private, servicePrincipalCert, keyAlias, p12KeyStorePassword)
 
         return PrincipalAndCredentials(
             createdSP,
             servicePrincipalPassword,
             servicePrincipalKeyPair,
             servicePrincipalCert,
-            pemFile, p12File, p12KeyStorePassword, keyAlias
+            pemFile, p12Bytes, p12KeyStorePassword, keyAlias
         )
     }
 }
@@ -64,7 +65,7 @@ data class PrincipalAndCredentials(
     val servicePrincipalKeyPair: KeyPair,
     val servicePrincipalCert: Certificate,
     val pemFile: File,
-    val p12File: File,
+    val p12Bytes: ByteArray,
     val p12FilePassword: String,
     val p12KeyAlias: String
 )
@@ -74,15 +75,15 @@ private fun createPksc12Store(
     cert: Certificate,
     keyAlias: String,
     keystorePassword: String
-): File {
-    val tempFile = Files.createTempFile("sp", ".pem").toFile()
-    FileOutputStream(tempFile).use {
+): ByteArray {
+    val byteArrayOutputStream = ByteArrayOutputStream()
+    byteArrayOutputStream.use {
         val ks = KeyStore.getInstance("PKCS12");
         ks.load(null)
         ks.setKeyEntry(keyAlias, priv, keystorePassword.toCharArray(), arrayOf(cert))
         ks.store(it, keystorePassword.toCharArray())
     }
-    return tempFile
+    return byteArrayOutputStream.toByteArray()
 }
 
 private fun generatePemFile(keyPair: KeyPair, cert: Certificate): File {

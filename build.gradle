@@ -105,6 +105,7 @@ task buildSetupImageDir(type: Copy, dependsOn: [project(":azure-keyvault-jar-bui
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/perform-registration.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/licenseAgreementCheck.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/generate-artemis-keystores.sh").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/generate-tunnel-keystores.sh").first())
     into(resourceDir)
 
     doFirst {

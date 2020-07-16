@@ -17,6 +17,10 @@ public class AzureKeyVaultConfigParams implements SubstitutableSource {
     public static final String KEY_PROTECTION_MODE_HARDWARE = "HARDWARE";
     public static final String KEY_PROTECTION_MODE_SOFTWARE = "SOFTWARE";
 
+    public static final String KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME = "KV_PASSWORD";
+    public static final String KEY_VAULT_CLIENT_ID_ENV_VAR_NAME = "KV_CLIENT_ID";
+
+
     public AzureKeyVaultConfigParams(String servicePrincipalCredentialsFilePath, String servicePrincipalCredentialsFilePassword,
                                      String keyAlias, String keyVaultURL, String keyVaultClientId, String keyVaultProtectionMode) {
         this.servicePrincipalCredentialsFilePath = servicePrincipalCredentialsFilePath;

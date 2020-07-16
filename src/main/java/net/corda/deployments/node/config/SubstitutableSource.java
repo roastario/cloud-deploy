@@ -22,6 +22,10 @@ public interface SubstitutableSource {
         String targetConfig();
     }
 
+    static String toEnvVarString(String toTransform){
+        return "${" + toTransform + "}";
+    }
+
     default Map<String, String> toSubstitutionMap() {
         try {
             Class<? extends SubstitutableSource> ourClass = this.getClass();

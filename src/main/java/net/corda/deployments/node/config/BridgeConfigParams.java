@@ -29,11 +29,31 @@ public final class BridgeConfigParams implements SubstitutableSource {
 
     public static final String BRIDGE_BASE_DIR = "/opt/corda";
     public static final String EXPECTED_FLOAT_CERTIFICATE_SUBJECT = "CN=float, O=Tunnel, L=LONDON, C=GB";
-    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_LOCATION = "/opt/corda/tunnel/bridge.jks";
+    public static final String BRIDGE_TUNNEL_STORES_DIR = "/opt/corda/tunnel/";
+    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME = "bridge.jks";
+    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME;
     public static final String BRIDGE_TUNNEL_TRUSTSTORE_LOCATION = "/opt/corda/tunnel/tunnel-truststore.jks";
     public static final String BRIDGE_NETWORK_PARAMETERS_PATH = "/opt/corda/network/network-params";
     public static final String BRIDGE_SSL_KEYSTORE_PATH = "/opt/corda/certificates/bridge.jks";
     public static final String BRIDGE_TRUSTSTORE_PATH = "/opt/corda/certificates/truststore.jks";
+
+    public static final String BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "TUNNEL_SSL_KEYSTORE_PASSWORD";
+    public static final String BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = "TUNNEL_TRUSTSTORE_PASSWORD";
+    public static final String BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = "TUNNEL_ENTRY_PASSWORD";
+
+    public static String BRIDGE_CERTIFICATE_ORGANISATION = "CordaDeployerTunnel";
+    public static String BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME = "ORGANISATION";
+    public static String BRIDGE_CERTIFICATE_ORGANISATION_UNIT = "Azure";
+    public static String BRIDGE_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME = "ORGANISATION_UNIT";
+    public static String BRIDGE_CERTIFICATE_LOCALITY = "CLOUD";
+    public static String BRIDGE_CERTIFICATE_LOCALITY_ENV_VAR_NAME = "LOCALITY";
+    public static String BRIDGE_CERTIFICATE_COUNTRY = "GB";
+    public static String BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME = "COUNTRY";
+    public static String BRIDGE_CERTIFICATE_COMMON_NAME = "Bridge";
+
+    public static String BRIDGE_CERTIFICATE_SUBJECT = "CN=" + BRIDGE_CERTIFICATE_COMMON_NAME + ", O=" + BRIDGE_CERTIFICATE_ORGANISATION
+            + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
+
 
     public String getArtemisAddress() {
         return artemisAddress;

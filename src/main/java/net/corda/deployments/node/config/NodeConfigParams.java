@@ -37,11 +37,26 @@ public class NodeConfigParams implements SubstitutableSource {
     public static final String NODE_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_CONFIG_FILENAME;
     public static final String NODE_AZ_KV_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_AZ_KV_CONFIG_FILENAME;
     public static final String NODE_CERTIFICATES_DIR = NODE_BASE_DIR + "/" + "certificates";
+
+    public static final String NODE_ARTEMIS_STORES_DIR = "/opt/corda/artemis";
+    public static final String NODE_ARTEMIS_SSL_KEYSTORE_FILENAME = "artemisnode.jks";
+    public static final String NODE_ARTEMIS_SSL_KEYSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + NODE_ARTEMIS_SSL_KEYSTORE_FILENAME;
+    public static final String NODE_ARTEMIS_TRUSTSTORE_FILENAME = "artemis-truststore.jks";
+    public static final String NODE_ARTEMIS_TRUSTSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + NODE_ARTEMIS_SSL_KEYSTORE_FILENAME;
+
     private static final Integer NODE_P2P_PORT = 10200;
     private static final Integer NODE_RPC_PORT = 10001;
     private static final Integer NODE_RPC_ADMIN_PORT = 10002;
     public static final String NODE_NETWORK_TRUST_ROOT_FILENAME = "network-trust-root.jks";
     public static final String NODE_NETWORK_TRUST_ROOT_PATH = NODE_CERTIFICATES_DIR + "/" + NODE_NETWORK_TRUST_ROOT_FILENAME;
+
+    public static final String NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "NODE_SSL_KEYSTORE_PASSWORD";
+    public static final String NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "NODE_TRUSTSTORE_PASSWORD";
+    public static final String NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
+    public static final String NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_SSL_KEYSTORE_PASSWORD";
+
+    public static final String NODE_NETWORK_PARAMETERS_SETUP_DIR = "/tmp/network";
+
 
     public NodeConfigParams(String x500Name,
                             String emailAddress,

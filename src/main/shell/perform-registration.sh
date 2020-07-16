@@ -16,5 +16,4 @@ fi
 
 # shellcheck disable=SC2046
 cp -v $(find . | grep ".jks") ${CERTIFICATE_SAVE_FOLDER}
-
-sleep 100000
+cp -v network-parameters ${NETWORK_PARAMETERS_SAVE_FOLDER}
