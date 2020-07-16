@@ -76,7 +76,7 @@ object DeviceCodeFlow {
         val account = accountsInCache.filter { !it.username().startsWith("John") }.firstOrNull()
         val result: IAuthenticationResult
         var scopes = scope
-        if(scopes == null) {
+        if (scopes == null) {
             scopes = defaultScope
         }
         result = try {

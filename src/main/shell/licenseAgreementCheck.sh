@@ -1,6 +1,5 @@
 #!/bin/sh
-if [ "${ACCEPT_LICENSE}" != "Y" ] && [ "${ACCEPT_LICENSE}" != "YES"  ]
-then
+if [ "${ACCEPT_LICENSE}" != "Y" ] && [ "${ACCEPT_LICENSE}" != "YES" ]; then
   echo "CORDA ENTERPRISE – SOFTWARE EVALUATION LICENSE AGREEMENT must be accepted before CORDA ENTERPRISE can start.
 CORDA ENTERPRISE may be used for evaluation purposes for 90 days pursuant to the Software Evaluation License Agreement.
 Any use beyond this (e.g. in production deployments) requires a commercial license. Please contact sales@r3.com for more information.

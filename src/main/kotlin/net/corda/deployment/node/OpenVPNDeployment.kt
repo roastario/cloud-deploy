@@ -117,19 +117,20 @@ class OpenVPNDeployment {
             .build()
 
 
-
         // loading the out-of-cluster config, a kubeconfig from file-system
-        val client = ClientBuilder.kubeconfig(KubeConfig.loadKubeConfig(FileReader(File(File(System.getProperty("user.home"), ".kube"), "config")))).build()
+        val client =
+            ClientBuilder.kubeconfig(KubeConfig.loadKubeConfig(FileReader(File(File(System.getProperty("user.home"), ".kube"), "config"))))
+                .build()
         Configuration.setDefaultApiClient(client)
         val appsV1Api = AppsV1Api()
         val coreApi = CoreV1Api()
 
         coreApi.listNode(null, null, null, null, null, null, null, null, null)
 
-        try{
+        try {
             val volumeClaim = coreApi.createNamespacedPersistentVolumeClaim(namespace, openVpnPvc, null, null, null)
             val dep = appsV1Api.createNamespacedDeployment(namespace, openVPNDeployment, null, null, null)
-        }catch (e: ApiException){
+        } catch (e: ApiException) {
             println(e.responseBody)
         }
 

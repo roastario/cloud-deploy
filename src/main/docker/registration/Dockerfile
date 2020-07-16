@@ -17,9 +17,13 @@ COPY drivers /opt/corda/drivers
 COPY perform-registration.sh /usr/bin/perform-registration
 COPY generate-artemis-keystores.sh /usr/bin/generate-artemis-keystores
 COPY licenseAgreementCheck.sh /usr/bin/licenseAgreementCheck
+
+RUN chmod +x /usr/bin/perform-registration /usr/bin/generate-artemis-keystores
 ENV CONFIG_FOLDER="/etc/corda"
 ENV BASE_DIR="/opt/corda"
 ENV TRUST_ROOT_PATH="/opt/corda/certificates/network-trust-root.jks"
+
+
 
 WORKDIR /opt/corda
 USER corda
