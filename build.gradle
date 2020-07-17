@@ -98,6 +98,9 @@ task buildFirewallImageDir(type: Copy) {
 }
 
 task buildSetupImageDir(type: Copy, dependsOn: [project(":azure-keyvault-jar-builder").shadowJar]) {
+
+    outputs.upToDateWhen { false }
+
     def resourceDir = new File(project.buildDir, "registrationDockerBuild")
     def driversDir = new File(resourceDir, "drivers")
 
@@ -106,6 +109,7 @@ task buildSetupImageDir(type: Copy, dependsOn: [project(":azure-keyvault-jar-bui
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/licenseAgreementCheck.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/generate-artemis-keystores.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/generate-tunnel-keystores.sh").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/configure-artemis.sh").first())
     into(resourceDir)
 
     doFirst {
@@ -136,6 +140,4 @@ task buildSetupImage(dependsOn: buildSetupImageDir) {
     }
 }
 
-task buildImages(dependsOn: [buildFirewallImage, buildSetupImage]) {
-
-}
+task buildImages(dependsOn: [buildFirewallImage, buildSetupImage])

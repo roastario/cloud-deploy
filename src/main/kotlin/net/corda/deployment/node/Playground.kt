@@ -4,6 +4,7 @@ import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.rest.LogLevel
 import io.kubernetes.client.PodLogs
+import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
@@ -16,6 +17,7 @@ import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
+import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.AzureKeyVaultConfigParams
 import net.corda.deployments.node.config.BridgeConfigParams
 import net.corda.deployments.node.config.NodeConfigParams
@@ -163,11 +165,13 @@ fun main(args: Array<String>) {
     val artemisSecretsName = "artemis-${randSuffix}"
     val artemisStorePassSecretKey = "artemisstorepass"
     val artemisTrustPassSecretKey = "artemistrustpass"
+    val artemisClusterPassSecretKey = "artemisclusterpass";
     val artemisSecret = SecretCreator.createStringSecret(
         artemisSecretsName,
         listOf(
             artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-            artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
+            artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
+            artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
         ).toMap()
         , "testingzone", defaultClient
     )
@@ -175,11 +179,11 @@ fun main(args: Array<String>) {
 
 
     val tunnelStoresDirectory = azureFileShareCreator.createDirectoryFor("tunnelstores")
-    val tunnelSecretName = "tunnelstoresecret"
+    val tunnelSecretName = "tunnelstoresecret-$randSuffix"
     val tunnelEntryPasswordKey = "tunnelentrypassword"
     val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
     val tunnelTrustStorePasswordKey = "tunneltruststorepassword";
-    val createStringSecret = SecretCreator.createStringSecret(
+    val tunnelSecret = SecretCreator.createStringSecret(
         tunnelSecretName,
         listOf(
             tunnelEntryPasswordKey to RandomStringUtils.randomAlphanumeric(32),
@@ -210,12 +214,33 @@ fun main(args: Array<String>) {
         tunnelStoresDirectory
     )
 
+    val artemisConfigShare = azureFileShareCreator.createDirectoryFor("artemis-config")
+    val configureArtemisJobName = "configure-artemis-$randSuffix"
+    val configureArtemisJob = configureArtemis(
+        configureArtemisJobName,
+        azureFilesSecretName,
+        artemisSecretsName,
+        artemisStorePassSecretKey,
+        artemisTrustPassSecretKey,
+        artemisClusterPassSecretKey,
+        artemisConfigShare
+    )
+
     simpleApply.create(initialRegistrationJob, "testingzone")
     simpleApply.create(generateArtemisStoresJob, "testingzone")
     simpleApply.create(generateTunnelStoresJob, "testingzone")
+    simpleApply.create(configureArtemisJob, "testingzone")
 
 
 
+    dumpLogsForJob(defaultClient, initialRegistrationJob.metadata?.name!!)
+    dumpLogsForJob(defaultClient, generateArtemisStoresJob.metadata?.name!!)
+    dumpLogsForJob(defaultClient, generateTunnelStoresJob.metadata?.name!!)
+
+
+}
+
+private fun dumpLogsForJob(defaultClient: ApiClient, jobName: String) {
     while (CoreV1Api(defaultClient).listNamespacedPod(
             "testingzone",
             "true",
@@ -240,7 +265,64 @@ fun main(args: Array<String>) {
     ).items.first()
     val logs = PodLogs(defaultClient.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
     IOUtils.copy(logs.streamNamespacedPodLog(pod), System.out, 128)
+}
 
+private fun configureArtemis(
+    jobName: String,
+    azureFilesSecretName: String,
+    artemisSecretsName: String,
+    artemisStorePassSecretKey: String,
+    artemisTrustPassSecretKey: String,
+    artemisClusterPassSecretKey: String,
+    workingDirShare: AzureFilesDirectory
+): V1Job {
+    val workingDirMountName = "azureworkingdir"
+    val workingDir = "/tmp/artemisConfig"
+    return V1JobBuilder()
+        .withApiVersion("batch/v1")
+        .withKind("Job")
+        .withNewMetadata()
+        .withName(jobName)
+        .endMetadata()
+        .withNewSpec()
+        .withNewTemplate()
+        .withNewSpec()
+        .addNewContainer()
+        .withName(jobName)
+        .withImage("corda/setup:latest")
+        .withImagePullPolicy("IfNotPresent")
+        .withCommand(listOf("configure-artemis"))
+        .withVolumeMounts(
+            V1VolumeMountBuilder()
+                .withName(workingDirMountName)
+                .withMountPath(workingDir).build()
+        )
+        .withEnv(
+            licenceAcceptEnvVar(),
+            keyValueEnvVar("WORKING_DIR", workingDir),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_USER_X500_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_SUBJECT),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_ADDRESS_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT.toString()),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_KEYSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PATH),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH),
+            secretEnvVar(ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisStorePassSecretKey),
+            secretEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisTrustPassSecretKey),
+            secretEnvVar(ArtemisConfigParams.ARTEMIS_CLUSTER_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisClusterPassSecretKey)
+        )
+        .endContainer()
+        .withVolumes(
+            V1VolumeBuilder()
+                .withName(workingDirMountName)
+                .withNewAzureFile()
+                .withShareName(workingDirShare.fileShare.name)
+                .withSecretName(azureFilesSecretName)
+                .withReadOnly(false).endAzureFile().build()
+        )
+        .withRestartPolicy("Never")
+        .endSpec()
+        .endTemplate()
+        .endSpec()
+        .build()
 }
 
 
@@ -255,6 +337,9 @@ private fun generateTunnelStores(
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
     val workingDir = "/tmp/tunnelGeneration"
+    val key = BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME
+    val value = BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
+    val bridgeTunnelKeystorePasswordEnvVarName = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME
     return V1JobBuilder()
         .withApiVersion("batch/v1")
         .withKind("Job")
@@ -275,48 +360,20 @@ private fun generateTunnelStores(
         )
         .withImagePullPolicy("IfNotPresent")
         .withEnv(
-            V1EnvVarBuilder().withName("ACCEPT_LICENSE").withValue("Y").build(),
-            V1EnvVarBuilder().withName("WORKING_DIR").withValue(workingDir).build(),
-            V1EnvVarBuilder()
-                .withName(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME)
-                .withValue(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION)
-                .build(),
-            V1EnvVarBuilder()
-                .withName(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME)
-                .withValue(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT)
-                .build(),
-            V1EnvVarBuilder()
-                .withName(BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY_ENV_VAR_NAME)
-                .withValue(BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY)
-                .build(),
-            V1EnvVarBuilder()
-                .withName(BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME)
-                .withValue(BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY)
-                .build(),
-            V1EnvVarBuilder().withName(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME)
-                .withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(tunnelSecretName)
-                .withKey(tunnelKeyStorePasswordKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build(),
-            V1EnvVarBuilder().withName(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME)
-                .withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(tunnelSecretName)
-                .withKey(tunnelTrustStorePasswordKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build(),
-            V1EnvVarBuilder().withName(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME)
-                .withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(tunnelSecretName)
-                .withKey(tunnelEntryPasswordKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build()
+            licenceAcceptEnvVar(),
+            keyValueEnvVar("WORKING_DIR", workingDir),
+            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
+                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
+            ),
+            keyValueEnvVar(
+                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME,
+                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT
+            ),
+            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY_ENV_VAR_NAME, BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY),
+            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME, BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY),
+            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelKeyStorePasswordKey),
+            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelTrustStorePasswordKey),
+            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelEntryPasswordKey)
         )
         .endContainer()
         .withVolumes(
@@ -363,23 +420,20 @@ private fun generateArtemisStoresJob(
         )
         .withImagePullPolicy("IfNotPresent")
         .withEnv(
-            V1EnvVarBuilder().withName("ACCEPT_LICENSE").withValue("Y").build(),
-            V1EnvVarBuilder().withName("WORKING_DIR").withValue("/tmp/artemisGeneration").build(),
-            V1EnvVarBuilder().withName("ARTEMIS_STORE_PASS")
-                .withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(artemisSecretsName)
-                .withKey(artemisStorePassSecretKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build(),
-            V1EnvVarBuilder().withName("ARTEMIS_TRUST_PASS").withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(artemisSecretsName)
-                .withKey(artemisTrustPassSecretKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build()
+            licenceAcceptEnvVar(),
+            keyValueEnvVar("WORKING_DIR", "/tmp/artemisGeneration"),
+            keyValueEnvVar(
+                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
+                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION
+            ),
+            keyValueEnvVar(
+                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME,
+                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_UNIT
+            ),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_CERTIFICATE_LOCALITY_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_LOCALITY),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY),
+            secretEnvVar("ARTEMIS_STORE_PASS", artemisSecretsName, artemisStorePassSecretKey),
+            secretEnvVar("ARTEMIS_TRUST_PASS", artemisSecretsName, artemisTrustPassSecretKey)
         )
         .endContainer()
         .withVolumes(
@@ -397,6 +451,8 @@ private fun generateArtemisStoresJob(
         .build()
     return initialRegistrationJob
 }
+
+private fun licenceAcceptEnvVar() = keyValueEnvVar("ACCEPT_LICENSE", "Y")
 
 private fun initialRegistrationJob(
     jobName: String,
@@ -443,42 +499,28 @@ private fun initialRegistrationJob(
         )
         .withImagePullPolicy("IfNotPresent")
         .withEnv(
-            V1EnvVarBuilder().withName("TRUST_ROOT_DOWNLOAD_URL").withValue("http://networkservices:8080/truststore").build(),
-            V1EnvVarBuilder().withName("TRUST_ROOT_PATH").withValue(NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH).build(),
-            V1EnvVarBuilder().withName("TRUSTSTORE_PASSWORD").withValue("trustpass").build(),
-            V1EnvVarBuilder().withName("BASE_DIR").withValue(NodeConfigParams.NODE_BASE_DIR).build(),
-            V1EnvVarBuilder().withName("CONFIG_FILE_PATH").withValue(NodeConfigParams.NODE_CONFIG_PATH).build(),
-            V1EnvVarBuilder().withName("CERTIFICATE_SAVE_FOLDER").withValue(NodeConfigParams.NODE_CERTIFICATES_DIR).build(),
-            V1EnvVarBuilder().withName("NETWORK_PARAMETERS_SAVE_FOLDER").withValue(NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR).build(),
-            V1EnvVarBuilder().withName(AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME).withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(credentialsSecretName)
-                .withKey(azKeyVaultCredentialsFilePasswordKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build(),
-            V1EnvVarBuilder().withName(AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME).withNewValueFrom()
-                .withNewSecretKeyRef()
-                .withName(credentialsSecretName)
-                .withKey(azKeyVaultCredentialsClientIdKey)
-                .endSecretKeyRef()
-                .endValueFrom()
-                .build()
+            keyValueEnvVar("TRUST_ROOT_DOWNLOAD_URL", "http://networkservices:8080/truststore"),
+            keyValueEnvVar("TRUST_ROOT_PATH", NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH),
+            keyValueEnvVar("TRUSTSTORE_PASSWORD", "trustpass"),
+            keyValueEnvVar("BASE_DIR", NodeConfigParams.NODE_BASE_DIR),
+            keyValueEnvVar("CONFIG_FILE_PATH", NodeConfigParams.NODE_CONFIG_PATH),
+            keyValueEnvVar("CERTIFICATE_SAVE_FOLDER", NodeConfigParams.NODE_CERTIFICATES_DIR),
+            keyValueEnvVar("NETWORK_PARAMETERS_SAVE_FOLDER", NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR),
+            secretEnvVar(
+                AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
+                credentialsSecretName,
+                azKeyVaultCredentialsFilePasswordKey
+            ),
+            secretEnvVar(
+                AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
+                credentialsSecretName,
+                azKeyVaultCredentialsClientIdKey
+            )
         )
         .endContainer()
         .withVolumes(
-            V1VolumeBuilder()
-                .withName(p12FileFolderMountName)
-                .withNewSecret()
-                .withSecretName(p12FileSecretName)
-                .endSecret()
-                .build(),
-            V1VolumeBuilder()
-                .withName(configFilesFolderMountName)
-                .withNewSecret()
-                .withSecretName(nodeConfigSecretsName)
-                .endSecret()
-                .build(),
+            secretVolumeWithAll(p12FileFolderMountName, p12FileSecretName),
+            secretVolumeWithAll(configFilesFolderMountName, nodeConfigSecretsName),
             V1VolumeBuilder()
                 .withName(certificatesFolderMountName)
                 .withNewAzureFile()
@@ -502,6 +544,40 @@ private fun initialRegistrationJob(
         .endSpec()
         .build()
     return initialRegistrationJob
+}
+
+private fun secretVolumeWithAll(
+    p12FileFolderMountName: String,
+    p12FileSecretName: String
+): V1Volume? {
+    return V1VolumeBuilder()
+        .withName(p12FileFolderMountName)
+        .withNewSecret()
+        .withSecretName(p12FileSecretName)
+        .endSecret()
+        .build()
+}
+
+private fun secretEnvVar(
+    key: String,
+    secretName: String,
+    tunnelKeyStorePasswordKey: String
+): V1EnvVar {
+    return V1EnvVarBuilder().withName(key)
+        .withNewValueFrom()
+        .withNewSecretKeyRef()
+        .withName(secretName)
+        .withKey(tunnelKeyStorePasswordKey)
+        .endSecretKeyRef()
+        .endValueFrom()
+        .build()
+}
+
+private fun keyValueEnvVar(key: String?, value: String?): V1EnvVar {
+    return V1EnvVarBuilder()
+        .withName(key)
+        .withValue(value)
+        .build()
 }
 
 fun String.toEnvVar(): String {
