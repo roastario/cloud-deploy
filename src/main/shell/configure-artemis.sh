@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2086
 (
+  # shellcheck disable=SC2086
   cd "${WORKING_DIR}" && java -jar /opt/corda/ha-utilities.jar configure-artemis \
     --verbose \
     --logging-level=DEBUG \
@@ -9,7 +9,8 @@
     --acceptor-address=${ACCEPTOR_ADDRESS}:${ACCEPTOR_PORT} \
     --keystore="${ARTEMIS_KEYSTORE_PATH}" \
     --truststore="${ARTEMIS_TRUSTSTORE_PATH}" \
-    --keystore-password="${ARTEMIS_KEYSTORE_PASSWORD}" \
-    --truststore-password="${ARTEMIS_TRUSTSTORE_PASS}" \
-    --cluster-password ${ARTEMIS_CLUSTER_PASSWORD}
+    --keystore-password="${ARTEMIS_SSL_KEYSTORE_PASSWORD}" \
+    --truststore-password="${ARTEMIS_TRUSTSTORE_PASSWORD}" \
+    --cluster-password "${ARTEMIS_CLUSTER_PASSWORD}"
+
 )

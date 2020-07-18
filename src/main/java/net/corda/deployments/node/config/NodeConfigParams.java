@@ -55,6 +55,10 @@ public class NodeConfigParams implements SubstitutableSource {
     public static final String NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
     public static final String NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_SSL_KEYSTORE_PASSWORD";
 
+    public static final String NODE_DATASOURCE_URL_ENV_VAR_NAME = "DATASOURCE_URL";
+    public static final String NODE_DATASOURCE_USERNAME_ENV_VAR_NAME = "DATASOURCE_USERNAME";
+    public static final String NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME = "DATASOURCE_PASSWORD";
+
     public static final String NODE_NETWORK_PARAMETERS_SETUP_DIR = "/tmp/network";
 
 

@@ -1,13 +1,16 @@
 package net.corda.deployment.node
 
+import com.google.gson.reflect.TypeToken
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.rest.LogLevel
 import io.kubernetes.client.PodLogs
 import io.kubernetes.client.openapi.ApiClient
+import io.kubernetes.client.openapi.apis.BatchV1Api
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
+import io.kubernetes.client.util.Watch
 import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.database.H2_DB
@@ -21,13 +24,17 @@ import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.AzureKeyVaultConfigParams
 import net.corda.deployments.node.config.BridgeConfigParams
 import net.corda.deployments.node.config.NodeConfigParams
+import okhttp3.OkHttpClient
 import org.apache.commons.io.IOUtils
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
+import java.time.Duration
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.random.Random
 import kotlin.random.nextUInt
+import kotlin.system.exitProcess
 
 
 @ExperimentalUnsignedTypes
@@ -45,9 +52,9 @@ fun main(args: Array<String>) {
 
 
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
-    val randSuffix = Random.nextUInt().toString(36).toLowerCase()
+    val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
 
-    val defaultClient = ClientBuilder.defaultClient().also { it.isDebugging = true }
+    val defaultClient = { ClientBuilder.defaultClient() }
 
     val azureFileShareCreator = AzureFileShareCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
 
@@ -67,6 +74,23 @@ fun main(args: Array<String>) {
 
     val nodeSSLStorePassword = RandomStringUtils.randomAlphanumeric(20)
     val nodeTrustStorePassword = RandomStringUtils.randomAlphanumeric(20)
+
+    val artemisStoreDirectory = azureFileShareCreator.createDirectoryFor("artemisstores")
+
+    val artemisSecretsName = "artemis-${randSuffix}"
+    val artemisStorePassSecretKey = "artemisstorepass"
+    val artemisTrustPassSecretKey = "artemistrustpass"
+    val artemisClusterPassSecretKey = "artemisclusterpass";
+    val artemisSecret = SecretCreator.createStringSecret(
+        artemisSecretsName,
+        listOf(
+            artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
+            artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
+            artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
+        ).toMap()
+        , "testingzone", defaultClient
+    )
+    val generateArtemisStoresJobName = "gen-artemis-stores-${randSuffix}"
 
     val nodeConfigParams = NodeConfigParams.builder()
         .withX500Name("O=BigCorporation,L=New York,C=US")
@@ -89,8 +113,8 @@ fun main(args: Array<String>) {
         .withRpcPassword("p")
         .withDataSourceClassName(dbParams.type.dataSourceClass)
         .withDataSourceURL(dbParams.jdbcURL)
-        .withDataSourceUsername(dbParams.username)
-        .withDataSourcePassword(dbParams.password)
+        .withDataSourceUsername(NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME.toEnvVar())
+        .withDataSourcePassword(NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME.toEnvVar())
         .withAzureKeyVaultConfPath(NodeConfigParams.NODE_AZ_KV_CONFIG_PATH)
         .build()
 
@@ -102,8 +126,8 @@ fun main(args: Array<String>) {
     val keyVaultParams = AzureKeyVaultConfigParams
         .builder()
         .withServicePrincipalCredentialsFilePath(AzureKeyVaultConfigParams.CREDENTIALS_P12_PATH)
-        .withServicePrincipalCredentialsFilePassword("\${${AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME}}")
-        .withKeyVaultClientId("\${${AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME}}")
+        .withServicePrincipalCredentialsFilePassword(AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withKeyVaultClientId(AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME.toEnvVar())
         .withKeyAlias(servicePrincipal.p12KeyAlias)
         .withKeyVaultURL(vault.vaultUri())
         .withKeyVaultProtectionMode(AzureKeyVaultConfigParams.KEY_PROTECTION_MODE_SOFTWARE)
@@ -112,15 +136,41 @@ fun main(args: Array<String>) {
 
     val nodeConf = ConfigGenerators.generateConfigFromParams(nodeConfigParams)
     val azKvConf = ConfigGenerators.generateConfigFromParams(keyVaultParams)
-    val nodeConfigSecretName = "node-config-secrets-$randSuffix"
+    val nodeConfigFilesSecretName = "node-config-secrets-$randSuffix"
 
-    val nodeConfigSecrets = SecretCreator.createStringSecret(
-        nodeConfigSecretName,
+    val nodeConfigFilesSecret = SecretCreator.createStringSecret(
+        nodeConfigFilesSecretName,
         listOf(
             NodeConfigParams.NODE_CONFIG_FILENAME to nodeConf,
             NodeConfigParams.NODE_AZ_KV_CONFIG_FILENAME to azKvConf
         ).toMap()
         , "testingzone", defaultClient
+    )
+
+    val nodeDatasourceSecretName = "node-datasource-secrets-$randSuffix"
+    val nodeDatasourceURLSecretKey = "node-datasource-url"
+    val nodeDatasourceUsernameSecretKey = "node-datasource-user"
+    val nodeDatasourcePasswordSecretyKey = "node-datasource-password"
+    val nodeDataSourceSecrets = SecretCreator.createStringSecret(
+        nodeDatasourceSecretName,
+        listOf(
+            nodeDatasourceURLSecretKey to dbParams.jdbcURL,
+            nodeDatasourceUsernameSecretKey to RandomStringUtils.randomAlphanumeric(20),
+            nodeDatasourcePasswordSecretyKey to RandomStringUtils.randomAlphanumeric(20)
+        ).toMap(),
+        "testingzone", defaultClient
+    )
+
+    val nodeStoresSecretName = "node-keystores-secrets-$randSuffix"
+    val nodeKeyStorePasswordSecretKey = "node-ssl-keystore-password"
+    val nodeTrustStorePasswordSecretKey = "node-truststore-password"
+    val nodeStoresSecrets = SecretCreator.createStringSecret(
+        nodeStoresSecretName,
+        listOf(
+            nodeKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20),
+            nodeTrustStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
+        ).toMap(),
+        "testingzone", defaultClient
     )
 
     val keyVaultCredentialsSecretName = "az-kv-password-secrets-$randSuffix"
@@ -145,37 +195,29 @@ fun main(args: Array<String>) {
         "testingzone", defaultClient
     )
 
-
     val jobName = "initial-registration-$randSuffix"
 
     val initialRegistrationJob = initialRegistrationJob(
         jobName,
         azureFilesSecretName,
-        nodeConfigSecretName,
+        nodeConfigFilesSecretName,
         keyVaultCredentialsSecretName,
         p12FileSecretName,
         azKeyVaultCredentialsFilePasswordKey,
         azKeyVaultCredentialsClientIdKey,
+        nodeDatasourceSecretName,
+        nodeDatasourceURLSecretKey,
+        nodeDatasourceUsernameSecretKey,
+        nodeDatasourcePasswordSecretyKey,
+        artemisSecretsName,
+        artemisStorePassSecretKey,
+        artemisTrustPassSecretKey,
+        nodeStoresSecretName,
+        nodeKeyStorePasswordSecretKey,
+        nodeTrustStorePasswordSecretKey,
         certificatesShare,
         networkParametersShare
     )
-
-    val artemisStoreDirectory = azureFileShareCreator.createDirectoryFor("artemisstores")
-
-    val artemisSecretsName = "artemis-${randSuffix}"
-    val artemisStorePassSecretKey = "artemisstorepass"
-    val artemisTrustPassSecretKey = "artemistrustpass"
-    val artemisClusterPassSecretKey = "artemisclusterpass";
-    val artemisSecret = SecretCreator.createStringSecret(
-        artemisSecretsName,
-        listOf(
-            artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-            artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-            artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
-        ).toMap()
-        , "testingzone", defaultClient
-    )
-    val generateArtemisStoresJobName = "gen-artemis-stores-${randSuffix}"
 
 
     val tunnelStoresDirectory = azureFileShareCreator.createDirectoryFor("tunnelstores")
@@ -223,48 +265,85 @@ fun main(args: Array<String>) {
         artemisStorePassSecretKey,
         artemisTrustPassSecretKey,
         artemisClusterPassSecretKey,
+        artemisStoreDirectory,
         artemisConfigShare
     )
 
     simpleApply.create(initialRegistrationJob, "testingzone")
+    waitForJob("testingzone", initialRegistrationJob, defaultClient)
+    dumpLogsForJob(defaultClient, initialRegistrationJob)
+
     simpleApply.create(generateArtemisStoresJob, "testingzone")
+    waitForJob("testingzone", generateArtemisStoresJob, defaultClient)
+    dumpLogsForJob(defaultClient, generateArtemisStoresJob)
+
     simpleApply.create(generateTunnelStoresJob, "testingzone")
+    waitForJob("testingzone", generateTunnelStoresJob, defaultClient)
+    dumpLogsForJob(defaultClient, generateTunnelStoresJob)
+
     simpleApply.create(configureArtemisJob, "testingzone")
+    waitForJob("testingzone", configureArtemisJob, defaultClient)
+    dumpLogsForJob(defaultClient, configureArtemisJob)
 
-
-
-    dumpLogsForJob(defaultClient, initialRegistrationJob.metadata?.name!!)
-    dumpLogsForJob(defaultClient, generateArtemisStoresJob.metadata?.name!!)
-    dumpLogsForJob(defaultClient, generateTunnelStoresJob.metadata?.name!!)
-
-
+    exitProcess(0)
 }
 
-private fun dumpLogsForJob(defaultClient: ApiClient, jobName: String) {
-    while (CoreV1Api(defaultClient).listNamespacedPod(
-            "testingzone",
-            "true",
+private fun waitForJob(
+    namespace: String,
+    job: V1Job,
+    clientSource: () -> ApiClient,
+    duration: Duration = Duration.ofMinutes(5)
+): V1Job {
+    val client = clientSource()
+    val httpClient: OkHttpClient = client.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build()
+    client.httpClient = httpClient
+    val api = BatchV1Api(client)
+    val watch: Watch<V1Job> = Watch.createWatch(
+        client,
+        api.listNamespacedJobCall(
+            namespace,
             null,
             null,
             null,
-            "job-name=${jobName}", 10, null, 30, false
-        ).items.firstOrNull()?.status?.containerStatuses?.firstOrNull { it.ready }?.ready != true
-    ) {
-        println("No matching job, waiting")
-        Thread.sleep(5000)
+            null,
+            "job-name=${job.metadata?.name}",
+            null,
+            null,
+            duration.toSeconds().toInt(),
+            true,
+            null
+        ),
+        object : TypeToken<Watch.Response<V1Job>>() {}.type
+    )
+
+    watch.use {
+        watch.forEach {
+            if (it.`object`.status?.succeeded == 1) {
+                return it.`object`
+            } else {
+                println("job ${job.metadata?.name} has not completed yet")
+            }
+        }
     }
 
+    throw TimeoutException("job ${job.metadata?.name} did not complete within expected time")
+}
 
-    val pod = CoreV1Api(defaultClient).listNamespacedPod(
+private fun dumpLogsForJob(clientSource: () -> ApiClient, job: V1Job) {
+    val client = clientSource()
+    val pod = CoreV1Api(client).listNamespacedPod(
         "testingzone",
         "true",
         null,
         null,
         null,
-        "job-name=${jobName}", 10, null, 30, false
+        "job-name=${job.metadata?.name}", 10, null, 30, false
     ).items.first()
-    val logs = PodLogs(defaultClient.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
-    IOUtils.copy(logs.streamNamespacedPodLog(pod), System.out, 128)
+    val logs = PodLogs(client.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
+    val logStream = logs.streamNamespacedPodLog(pod)
+    logStream.use {
+        IOUtils.copy(it, System.out, 128)
+    }
 }
 
 private fun configureArtemis(
@@ -274,34 +353,29 @@ private fun configureArtemis(
     artemisStorePassSecretKey: String,
     artemisTrustPassSecretKey: String,
     artemisClusterPassSecretKey: String,
+    artemisStoresDirectory: AzureFilesDirectory,
     workingDirShare: AzureFilesDirectory
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
+    val storesDirMountName = "storesdir"
     val workingDir = "/tmp/artemisConfig"
-    return V1JobBuilder()
-        .withApiVersion("batch/v1")
-        .withKind("Job")
-        .withNewMetadata()
-        .withName(jobName)
-        .endMetadata()
-        .withNewSpec()
-        .withNewTemplate()
-        .withNewSpec()
-        .addNewContainer()
-        .withName(jobName)
-        .withImage("corda/setup:latest")
-        .withImagePullPolicy("IfNotPresent")
-        .withCommand(listOf("configure-artemis"))
+    return setupImageTaskBuilder(jobName, listOf("configure-artemis"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
                 .withName(workingDirMountName)
-                .withMountPath(workingDir).build()
+                .withMountPath(workingDir).build(),
+            V1VolumeMountBuilder()
+                .withName(storesDirMountName)
+                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIRECTORY).build()
         )
         .withEnv(
             licenceAcceptEnvVar(),
             keyValueEnvVar("WORKING_DIR", workingDir),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_USER_X500_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_SUBJECT),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_ADDRESS_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES),
+            keyValueEnvVar(
+                ArtemisConfigParams.ARTEMIS_ACCEPTOR_ADDRESS_ENV_VAR_NAME,
+                ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES
+            ),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT.toString()),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_KEYSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PATH),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH),
@@ -311,12 +385,8 @@ private fun configureArtemis(
         )
         .endContainer()
         .withVolumes(
-            V1VolumeBuilder()
-                .withName(workingDirMountName)
-                .withNewAzureFile()
-                .withShareName(workingDirShare.fileShare.name)
-                .withSecretName(azureFilesSecretName)
-                .withReadOnly(false).endAzureFile().build()
+            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
+            azureFileMount(storesDirMountName, artemisStoresDirectory, azureFilesSecretName, true)
         )
         .withRestartPolicy("Never")
         .endSpec()
@@ -337,22 +407,7 @@ private fun generateTunnelStores(
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
     val workingDir = "/tmp/tunnelGeneration"
-    val key = BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME
-    val value = BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
-    val bridgeTunnelKeystorePasswordEnvVarName = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME
-    return V1JobBuilder()
-        .withApiVersion("batch/v1")
-        .withKind("Job")
-        .withNewMetadata()
-        .withName(jobName)
-        .endMetadata()
-        .withNewSpec()
-        .withNewTemplate()
-        .withNewSpec()
-        .addNewContainer()
-        .withName(jobName)
-        .withImage("corda/setup:latest")
-        .withCommand(listOf("generate-tunnel-keystores"))
+    return setupImageTaskBuilder(jobName, listOf("generate-tunnel-keystores"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
                 .withName(workingDirMountName)
@@ -362,7 +417,8 @@ private fun generateTunnelStores(
         .withEnv(
             licenceAcceptEnvVar(),
             keyValueEnvVar("WORKING_DIR", workingDir),
-            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
+            keyValueEnvVar(
+                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
                 BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
             ),
             keyValueEnvVar(
@@ -377,12 +433,7 @@ private fun generateTunnelStores(
         )
         .endContainer()
         .withVolumes(
-            V1VolumeBuilder()
-                .withName(workingDirMountName)
-                .withNewAzureFile()
-                .withShareName(workingDirShare.fileShare.name)
-                .withSecretName(azureFilesSecretName)
-                .withReadOnly(false).endAzureFile().build()
+            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false)
         )
         .withRestartPolicy("Never")
         .endSpec()
@@ -400,19 +451,7 @@ private fun generateArtemisStoresJob(
     artemisTrustPassSecretKey: String,
     workingDir: AzureFilesDirectory
 ): V1Job {
-    val initialRegistrationJob = V1JobBuilder()
-        .withApiVersion("batch/v1")
-        .withKind("Job")
-        .withNewMetadata()
-        .withName(jobName)
-        .endMetadata()
-        .withNewSpec()
-        .withNewTemplate()
-        .withNewSpec()
-        .addNewContainer()
-        .withName(jobName)
-        .withImage("corda/setup:latest")
-        .withCommand(listOf("generate-artemis-keystores"))
+    val initialRegistrationJob = setupImageTaskBuilder(jobName, listOf("generate-artemis-keystores"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
                 .withName("azureworkingdir")
@@ -437,12 +476,7 @@ private fun generateArtemisStoresJob(
         )
         .endContainer()
         .withVolumes(
-            V1VolumeBuilder()
-                .withName("azureworkingdir")
-                .withNewAzureFile()
-                .withShareName(workingDir.fileShare.name)
-                .withSecretName(azureFilesSecretName)
-                .withReadOnly(false).endAzureFile().build()
+            azureFileMount("azureworkingdir", workingDir, azureFilesSecretName, false)
         )
         .withRestartPolicy("Never")
         .endSpec()
@@ -452,7 +486,6 @@ private fun generateArtemisStoresJob(
     return initialRegistrationJob
 }
 
-private fun licenceAcceptEnvVar() = keyValueEnvVar("ACCEPT_LICENSE", "Y")
 
 private fun initialRegistrationJob(
     jobName: String,
@@ -462,6 +495,16 @@ private fun initialRegistrationJob(
     p12FileSecretName: String,
     azKeyVaultCredentialsFilePasswordKey: String,
     azKeyVaultCredentialsClientIdKey: String,
+    nodeDatasourceSecretName: String,
+    nodeDatasourceURLSecretKey: String,
+    nodeDatasourceUsernameSecretKey: String,
+    nodeDatasourcePasswordSecretyKey: String,
+    artemisSecretsName: String,
+    artemisStorePassSecretKey: String,
+    artemisTrustPassSecretKey: String,
+    nodeStoresSecretName: String,
+    nodeKeyStorePasswordSecretKey: String,
+    nodeTrustStorePasswordSecretKey: String,
     certificatesShare: AzureFilesDirectory,
     networkParametersShare: AzureFilesDirectory
 ): V1Job {
@@ -469,20 +512,7 @@ private fun initialRegistrationJob(
     val configFilesFolderMountName = "azurecordaconfigdir"
     val certificatesFolderMountName = "azurecordacertificatesdir"
     val networkFolderMountName = "networkdir"
-
-    val initialRegistrationJob = V1JobBuilder()
-        .withApiVersion("batch/v1")
-        .withKind("Job")
-        .withNewMetadata()
-        .withName(jobName)
-        .endMetadata()
-        .withNewSpec()
-        .withNewTemplate()
-        .withNewSpec()
-        .addNewContainer()
-        .withName(jobName)
-        .withImage("corda/setup:latest")
-        .withCommand(listOf("perform-registration"))
+    val initialRegistrationJob = setupImageTaskBuilder(jobName, listOf("perform-registration"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
                 .withName(p12FileFolderMountName)
@@ -501,7 +531,7 @@ private fun initialRegistrationJob(
         .withEnv(
             keyValueEnvVar("TRUST_ROOT_DOWNLOAD_URL", "http://networkservices:8080/truststore"),
             keyValueEnvVar("TRUST_ROOT_PATH", NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH),
-            keyValueEnvVar("TRUSTSTORE_PASSWORD", "trustpass"),
+            keyValueEnvVar("NETWORK_TRUSTSTORE_PASSWORD", "trustpass"),
             keyValueEnvVar("BASE_DIR", NodeConfigParams.NODE_BASE_DIR),
             keyValueEnvVar("CONFIG_FILE_PATH", NodeConfigParams.NODE_CONFIG_PATH),
             keyValueEnvVar("CERTIFICATE_SAVE_FOLDER", NodeConfigParams.NODE_CERTIFICATES_DIR),
@@ -515,28 +545,49 @@ private fun initialRegistrationJob(
                 AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
                 credentialsSecretName,
                 azKeyVaultCredentialsClientIdKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_DATASOURCE_URL_ENV_VAR_NAME,
+                nodeDatasourceSecretName,
+                nodeDatasourceURLSecretKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME,
+                nodeDatasourceSecretName,
+                nodeDatasourceUsernameSecretKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME,
+                nodeDatasourceSecretName,
+                nodeDatasourcePasswordSecretyKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                artemisSecretsName,
+                artemisTrustPassSecretKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
+                artemisSecretsName,
+                artemisStorePassSecretKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
+                nodeStoresSecretName,
+                nodeKeyStorePasswordSecretKey
+            ),
+            secretEnvVar(
+                NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                nodeStoresSecretName,
+                nodeTrustStorePasswordSecretKey
             )
         )
         .endContainer()
         .withVolumes(
             secretVolumeWithAll(p12FileFolderMountName, p12FileSecretName),
             secretVolumeWithAll(configFilesFolderMountName, nodeConfigSecretsName),
-            V1VolumeBuilder()
-                .withName(certificatesFolderMountName)
-                .withNewAzureFile()
-                .withShareName(certificatesShare.fileShare.name)
-                .withSecretName(azureFilesSecretName)
-                .withReadOnly(false)
-                .endAzureFile()
-                .build(),
-            V1VolumeBuilder()
-                .withName(networkFolderMountName)
-                .withNewAzureFile()
-                .withShareName(networkParametersShare.fileShare.name)
-                .withSecretName(azureFilesSecretName)
-                .withReadOnly(false)
-                .endAzureFile()
-                .build()
+            azureFileMount(certificatesFolderMountName, certificatesShare, azureFilesSecretName, false),
+            azureFileMount(networkFolderMountName, networkParametersShare, azureFilesSecretName, false)
         )
         .withRestartPolicy("Never")
         .endSpec()
@@ -546,14 +597,50 @@ private fun initialRegistrationJob(
     return initialRegistrationJob
 }
 
-private fun secretVolumeWithAll(
-    p12FileFolderMountName: String,
-    p12FileSecretName: String
-): V1Volume? {
+private fun setupImageTaskBuilder(
+    jobName: String,
+    command: List<String>
+): V1PodSpecFluent.ContainersNested<V1PodTemplateSpecFluent.SpecNested<V1JobSpecFluent.TemplateNested<V1JobFluent.SpecNested<V1JobBuilder>>>> {
+    return V1JobBuilder()
+        .withApiVersion("batch/v1")
+        .withKind("Job")
+        .withNewMetadata()
+        .withName(jobName)
+        .endMetadata()
+        .withNewSpec()
+        .withNewTemplate()
+        .withNewSpec()
+        .addNewContainer()
+        .withName(jobName)
+        .withImage("corda/setup:latest")
+        .withImagePullPolicy("IfNotPresent")
+        .withCommand(command)
+}
+
+private fun azureFileMount(
+    mountName: String,
+    share: AzureFilesDirectory,
+    azureFilesSecretName: String,
+    readOnly: Boolean
+): V1Volume {
     return V1VolumeBuilder()
-        .withName(p12FileFolderMountName)
+        .withName(mountName)
+        .withNewAzureFile()
+        .withShareName(share.fileShare.name)
+        .withSecretName(azureFilesSecretName)
+        .withReadOnly(readOnly)
+        .endAzureFile()
+        .build()
+}
+
+private fun secretVolumeWithAll(
+    mountName: String,
+    secretName: String
+): V1Volume {
+    return V1VolumeBuilder()
+        .withName(mountName)
         .withNewSecret()
-        .withSecretName(p12FileSecretName)
+        .withSecretName(secretName)
         .endSecret()
         .build()
 }
@@ -579,6 +666,8 @@ private fun keyValueEnvVar(key: String?, value: String?): V1EnvVar {
         .withValue(value)
         .build()
 }
+
+private fun licenceAcceptEnvVar() = keyValueEnvVar("ACCEPT_LICENSE", "Y")
 
 fun String.toEnvVar(): String {
     return "\${$this}"

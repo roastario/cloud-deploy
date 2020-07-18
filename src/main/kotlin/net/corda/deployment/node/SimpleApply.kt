@@ -7,6 +7,7 @@ import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1Namespace
+import io.kubernetes.client.openapi.models.V1ObjectMeta
 import io.kubernetes.client.util.ClientBuilder
 import net.corda.deployment.node.kubernetes.allowAllFailures
 import java.lang.IllegalStateException
@@ -92,23 +93,25 @@ val methodMap: Lazy<HashMap<Class<*>, PriorityQueue<ApiClassAndMethodPair>>> = l
 }
 
 interface SimpleApplier {
-    fun create(o: Any, namespace: String = "default", apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = true })
+    fun create(o: Any, namespace: String = "default", apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = false })
     fun apply(
         o: List<Any>,
         namespace: String = "default",
-        apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = true }
+        apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = false }
     )
 }
 
 val simpleApply = object : SimpleApplier {
     override fun create(o: Any, namespace: String, apiClient: ApiClient) {
-        when (o.javaClass) {
+        when (val classOfObjectToCreate = o.javaClass) {
             in methodMap.value -> {
-                val info = methodMap.value[o.javaClass]!!.first()
+                val metaDataMethod = allowAllFailures { classOfObjectToCreate.getMethod("getMetadata") }
+                val metaData = metaDataMethod?.invoke(o) as? V1ObjectMeta
+                val info = methodMap.value[classOfObjectToCreate]!!.first()
                 val apiClass = Class.forName(info.apiClassInfo.name)
                 val apiInstance = apiClass.getConstructor(ApiClient::class.java).newInstance(apiClient)
                 val method = info.createMethod.loadClassAndGetMethod()
-                println("creating: ${o}")
+                println("using: ${apiClass.canonicalName}.${method.name} to create an instance of ${classOfObjectToCreate.canonicalName} (name=${metaData?.name})")
                 if (info.namespaced) {
                     try {
                         method.invoke(apiInstance, namespace, o, null, null, null)
@@ -126,7 +129,7 @@ val simpleApply = object : SimpleApplier {
                 }
             }
             else -> {
-                throw IllegalStateException("unknown type: " + o.javaClass.canonicalName)
+                throw IllegalStateException("unknown type: " + classOfObjectToCreate.canonicalName)
             }
         }
     }

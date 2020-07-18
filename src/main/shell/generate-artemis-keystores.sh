@@ -9,4 +9,6 @@ mkdir -p "${WORKING_DIR}"
     -u "${ORGANISATION_UNIT}" \
     -c "${COUNTRY}" \
     -l "${LOCALITY}"
+  # shellcheck disable=SC2046
+  cp -v $(find . | grep ".jks") "${WORKING_DIR}"
 )
