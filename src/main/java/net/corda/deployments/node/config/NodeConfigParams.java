@@ -47,8 +47,13 @@ public class NodeConfigParams implements SubstitutableSource {
     private static final Integer NODE_P2P_PORT = 10200;
     private static final Integer NODE_RPC_PORT = 10001;
     private static final Integer NODE_RPC_ADMIN_PORT = 10002;
+
     public static final String NODE_NETWORK_TRUST_ROOT_FILENAME = "network-trust-root.jks";
     public static final String NODE_NETWORK_TRUST_ROOT_PATH = NODE_CERTIFICATES_DIR + "/" + NODE_NETWORK_TRUST_ROOT_FILENAME;
+
+    public static final String NODE_IDENTITY_KEYSTORE_FILENAME = "nodekeystore.jks";
+    public static final String NODE_SSL_KEYSTORE_FILENAME = "sslkeystore.jks";
+    public static final String NODE_TRUSTSTORE_FILENAME = "truststore.jks";
 
     public static final String NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "NODE_SSL_KEYSTORE_PASSWORD";
     public static final String NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "NODE_TRUSTSTORE_PASSWORD";

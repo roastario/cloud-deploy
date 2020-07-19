@@ -56,6 +56,7 @@ val methodMap: Lazy<HashMap<Class<*>, PriorityQueue<ApiClassAndMethodPair>>> = l
 
     HashMap<Class<*>, PriorityQueue<ApiClassAndMethodPair>>().also { map ->
         apis.forEach { classInfo ->
+
             val interestingMethods = classInfo.methodInfo.filter { methodInfo ->
                 methodInfo.parameterInfo.map { it.typeSignatureOrTypeDescriptor.toStringWithSimpleNames() }
                     .contains(methodInfo.typeSignatureOrTypeDescriptor.resultType.toStringWithSimpleNames())

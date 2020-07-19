@@ -267,6 +267,7 @@ fun main() {
     val networkForClusters = networkCreator.createNetworkForClusters()
     val database = dbCreator.createSQLServerDBForCorda(networkForClusters)
 
+
     val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
     val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
 

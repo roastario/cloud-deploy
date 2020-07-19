@@ -34,8 +34,12 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME;
     public static final String BRIDGE_TUNNEL_TRUSTSTORE_LOCATION = "/opt/corda/tunnel/tunnel-truststore.jks";
     public static final String BRIDGE_NETWORK_PARAMETERS_PATH = "/opt/corda/network/network-params";
-    public static final String BRIDGE_SSL_KEYSTORE_PATH = "/opt/corda/certificates/bridge.jks";
-    public static final String BRIDGE_TRUSTSTORE_PATH = "/opt/corda/certificates/truststore.jks";
+
+    public static final String BRIDGE_CERTIFICATES_DIR = "/opt/corda/certificates";
+    public static final String BRIDGE_SSL_KEYSTORE_FILENAME = "bridge.jks";
+    public static final String BRIDGE_SSL_KEYSTORE_PATH = BRIDGE_CERTIFICATES_DIR +"/"+BRIDGE_SSL_KEYSTORE_FILENAME;
+    public static final String BRIDGE_TRUSTSTORE_FILENAME = "truststore.jks";
+    public static final String BRIDGE_TRUSTSTORE_PATH = BRIDGE_CERTIFICATES_DIR +"/"+BRIDGE_TRUSTSTORE_FILENAME;
 
     public static final String BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "TUNNEL_SSL_KEYSTORE_PASSWORD";
     public static final String BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = "TUNNEL_TRUSTSTORE_PASSWORD";

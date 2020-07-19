@@ -32,8 +32,6 @@ import java.security.Security
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import kotlin.random.Random
-import kotlin.random.nextUInt
 import kotlin.system.exitProcess
 
 
@@ -41,7 +39,8 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
 
     val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())
-    allowAllFailures { simpleApply.apply(nmsSetup, namespace = "testingzone") }
+    val namespace = "testingzone"
+    allowAllFailures { simpleApply.apply(nmsSetup, namespace = namespace) }
     val bouncyCastleProvider = BouncyCastleProvider()
     Security.addProvider(bouncyCastleProvider)
 
@@ -54,28 +53,27 @@ fun main(args: Array<String>) {
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
     val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
 
-    val defaultClient = { ClientBuilder.defaultClient() }
+    val defaultClientSource = { ClientBuilder.defaultClient() }
 
     val azureFileShareCreator = AzureFileShareCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
 
-    val certificatesShare = azureFileShareCreator.createDirectoryFor("certificates")
+    val nodeCertificatesShare = azureFileShareCreator.createDirectoryFor("node-certificates")
     val networkParametersShare = azureFileShareCreator.createDirectoryFor("network-files")
     val azureFilesSecretName = "azure-files-secret-$randSuffix"
     SecretCreator.createStringSecret(
         azureFilesSecretName,
         listOf(
-            "azurestorageaccountname" to certificatesShare.storageAccount.name(),
-            "azurestorageaccountkey" to certificatesShare.storageAccount.keys[0].value()
+            "azurestorageaccountname" to nodeCertificatesShare.storageAccount.name(),
+            "azurestorageaccountkey" to nodeCertificatesShare.storageAccount.keys[0].value()
         ).toMap()
-        , "testingzone", defaultClient
+        , namespace, defaultClientSource
     )
 
     val dbParams = H2_DB
 
-    val nodeSSLStorePassword = RandomStringUtils.randomAlphanumeric(20)
     val nodeTrustStorePassword = RandomStringUtils.randomAlphanumeric(20)
 
-    val artemisStoreDirectory = azureFileShareCreator.createDirectoryFor("artemisstores")
+    val artemisStoreDirectory = azureFileShareCreator.createDirectoryFor("artemis-stores")
 
     val artemisSecretsName = "artemis-${randSuffix}"
     val artemisStorePassSecretKey = "artemisstorepass"
@@ -88,7 +86,7 @@ fun main(args: Array<String>) {
             artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
             artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
         ).toMap()
-        , "testingzone", defaultClient
+        , namespace, defaultClientSource
     )
     val generateArtemisStoresJobName = "gen-artemis-stores-${randSuffix}"
 
@@ -144,7 +142,7 @@ fun main(args: Array<String>) {
             NodeConfigParams.NODE_CONFIG_FILENAME to nodeConf,
             NodeConfigParams.NODE_AZ_KV_CONFIG_FILENAME to azKvConf
         ).toMap()
-        , "testingzone", defaultClient
+        , namespace, defaultClientSource
     )
 
     val nodeDatasourceSecretName = "node-datasource-secrets-$randSuffix"
@@ -158,19 +156,20 @@ fun main(args: Array<String>) {
             nodeDatasourceUsernameSecretKey to RandomStringUtils.randomAlphanumeric(20),
             nodeDatasourcePasswordSecretyKey to RandomStringUtils.randomAlphanumeric(20)
         ).toMap(),
-        "testingzone", defaultClient
+        namespace, defaultClientSource
     )
 
     val nodeStoresSecretName = "node-keystores-secrets-$randSuffix"
     val nodeKeyStorePasswordSecretKey = "node-ssl-keystore-password"
     val nodeTrustStorePasswordSecretKey = "node-truststore-password"
+
     val nodeStoresSecrets = SecretCreator.createStringSecret(
         nodeStoresSecretName,
         listOf(
             nodeKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20),
             nodeTrustStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
         ).toMap(),
-        "testingzone", defaultClient
+        namespace, defaultClientSource
     )
 
     val keyVaultCredentialsSecretName = "az-kv-password-secrets-$randSuffix"
@@ -183,16 +182,16 @@ fun main(args: Array<String>) {
             azKeyVaultCredentialsFilePasswordKey to servicePrincipal.p12FilePassword,
             azKeyVaultCredentialsClientIdKey to servicePrincipal.servicePrincipal.applicationId()
         ).toMap()
-        , "testingzone", defaultClient
+        , namespace, defaultClientSource
     )
 
     val p12FileSecretName = "keyvault-auth-file-secrets-$randSuffix"
-    SecretCreator.createByteArraySecret(
+    val p12Secret = SecretCreator.createByteArraySecret(
         p12FileSecretName,
         listOf(
             AzureKeyVaultConfigParams.CREDENTIALS_P12_FILENAME to servicePrincipal.p12Bytes
         ).toMap(),
-        "testingzone", defaultClient
+        namespace, defaultClientSource
     )
 
     val jobName = "initial-registration-$randSuffix"
@@ -215,13 +214,13 @@ fun main(args: Array<String>) {
         nodeStoresSecretName,
         nodeKeyStorePasswordSecretKey,
         nodeTrustStorePasswordSecretKey,
-        certificatesShare,
+        nodeCertificatesShare,
         networkParametersShare
     )
 
 
-    val tunnelStoresDirectory = azureFileShareCreator.createDirectoryFor("tunnelstores")
-    val tunnelSecretName = "tunnelstoresecret-$randSuffix"
+    val tunnelStoresDirectory = azureFileShareCreator.createDirectoryFor("tunnel-stores")
+    val tunnelSecretName = "tunnel-store-secrets-$randSuffix"
     val tunnelEntryPasswordKey = "tunnelentrypassword"
     val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
     val tunnelTrustStorePasswordKey = "tunneltruststorepassword";
@@ -232,7 +231,7 @@ fun main(args: Array<String>) {
             tunnelKeyStorePasswordKey to RandomStringUtils.randomAlphanumeric(32),
             tunnelTrustStorePasswordKey to RandomStringUtils.randomAlphanumeric(32)
         ).toMap()
-        , "testingzone", defaultClient
+        , namespace, defaultClientSource
     )
 
     val generateTunnelStoresJobName = "gen-tunnel-stores-${randSuffix}"
@@ -269,21 +268,51 @@ fun main(args: Array<String>) {
         artemisConfigShare
     )
 
-    simpleApply.create(initialRegistrationJob, "testingzone")
-    waitForJob("testingzone", initialRegistrationJob, defaultClient)
-    dumpLogsForJob(defaultClient, initialRegistrationJob)
+    val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${randSuffix}"
+    val bridgeCertificatesShare = azureFileShareCreator.createDirectoryFor("bridge-certs")
+    val bridgeCertificatesSecretName = "bridge-certs-secerts-$randSuffix"
+    val bridgeSSLKeyStorePasswordSecretKey = "bridgesslpassword"
+    val bridgeTruststorePasswordSecretKey = "bridgetruststorepassword"
 
-    simpleApply.create(generateArtemisStoresJob, "testingzone")
-    waitForJob("testingzone", generateArtemisStoresJob, defaultClient)
-    dumpLogsForJob(defaultClient, generateArtemisStoresJob)
+    val bridgeSSLSecret = SecretCreator.createStringSecret(
+        bridgeCertificatesSecretName,
+        listOf(
+            bridgeSSLKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20),
+            bridgeTruststorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
+        ).toMap(),
+        namespace, defaultClientSource
+    )
 
-    simpleApply.create(generateTunnelStoresJob, "testingzone")
-    waitForJob("testingzone", generateTunnelStoresJob, defaultClient)
-    dumpLogsForJob(defaultClient, generateTunnelStoresJob)
+    val importNodeKeyStoreToBridgeJob = importNodeKeyStoreToBridgeJob(
+        importNodeToBridgeJobName,
+        azureFilesSecretName,
+        nodeStoresSecretName,
+        nodeKeyStorePasswordSecretKey,
+        bridgeCertificatesSecretName,
+        bridgeSSLKeyStorePasswordSecretKey,
+        nodeCertificatesShare,
+        bridgeCertificatesShare
+    )
 
-    simpleApply.create(configureArtemisJob, "testingzone")
-    waitForJob("testingzone", configureArtemisJob, defaultClient)
-    dumpLogsForJob(defaultClient, configureArtemisJob)
+    simpleApply.create(initialRegistrationJob, namespace)
+    waitForJob(namespace, initialRegistrationJob, defaultClientSource)
+    dumpLogsForJob(defaultClientSource, initialRegistrationJob)
+
+    simpleApply.create(generateArtemisStoresJob, namespace)
+    waitForJob(namespace, generateArtemisStoresJob, defaultClientSource)
+    dumpLogsForJob(defaultClientSource, generateArtemisStoresJob)
+
+    simpleApply.create(generateTunnelStoresJob, namespace)
+    waitForJob(namespace, generateTunnelStoresJob, defaultClientSource)
+    dumpLogsForJob(defaultClientSource, generateTunnelStoresJob)
+
+    simpleApply.create(configureArtemisJob, namespace)
+    waitForJob(namespace, configureArtemisJob, defaultClientSource)
+    dumpLogsForJob(defaultClientSource, configureArtemisJob)
+
+    simpleApply.create(importNodeKeyStoreToBridgeJob, namespace)
+    waitForJob(namespace, importNodeKeyStoreToBridgeJob, defaultClientSource)
+    dumpLogsForJob(defaultClientSource, importNodeKeyStoreToBridgeJob)
 
     exitProcess(0)
 }
@@ -345,6 +374,61 @@ private fun dumpLogsForJob(clientSource: () -> ApiClient, job: V1Job) {
         IOUtils.copy(it, System.out, 128)
     }
 }
+
+private fun importNodeKeyStoreToBridgeJob(
+    jobName: String,
+    azureFilesSecretName: String,
+    nodeCertificatesSecretName: String,
+    nodeKeyStorePasswordSecretKey: String,
+    bridgeCertificatesSecretName: String,
+    bridgeKeyStorePasswordSecretKey: String,
+    nodeCertificatesShare: AzureFilesDirectory,
+    workingDirShare: AzureFilesDirectory
+): V1Job {
+    val workingDirPath = "/tmp/bridgeImport"
+    val nodeCertificatesPath = "/tmp/nodeCerts"
+    val workingDirMountName = "azureworkingdir"
+    val nodeCertificatesMountName = "azurenodecerts"
+    val nodeSSLKeystorePath = "$nodeCertificatesPath/${NodeConfigParams.NODE_SSL_KEYSTORE_FILENAME}"
+    val bridgeSSLKeystorePath = "$workingDirPath/${BridgeConfigParams.BRIDGE_SSL_KEYSTORE_FILENAME}"
+
+    val importJob = setupImageTaskBuilder(jobName, listOf("import-node-ssl-to-bridge"))
+        .withVolumeMounts(
+            V1VolumeMountBuilder()
+                .withName(workingDirMountName)
+                .withMountPath(workingDirPath).build(),
+            V1VolumeMountBuilder()
+                .withName(nodeCertificatesMountName)
+                .withMountPath(nodeCertificatesPath).build()
+        )
+        .withImagePullPolicy("IfNotPresent")
+        .withEnv(
+            licenceAcceptEnvVar(),
+            keyValueEnvVar("WORKING_DIR", workingDirPath),
+            keyValueEnvVar(
+                "NODE_KEYSTORE_TO_IMPORT",
+                nodeSSLKeystorePath
+            ),
+            keyValueEnvVar(
+                "BRIDGE_KEYSTORE",
+                bridgeSSLKeystorePath
+            ),
+            secretEnvVar("NODE_KEYSTORE_PASSWORD", nodeCertificatesSecretName, nodeKeyStorePasswordSecretKey),
+            secretEnvVar("BRIDGE_KEYSTORE_PASSWORD", bridgeCertificatesSecretName, bridgeKeyStorePasswordSecretKey)
+        )
+        .endContainer()
+        .withVolumes(
+            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
+            azureFileMount(nodeCertificatesMountName, nodeCertificatesShare, azureFilesSecretName, true)
+        )
+        .withRestartPolicy("Never")
+        .endSpec()
+        .endTemplate()
+        .endSpec()
+        .build()
+    return importJob
+}
+
 
 private fun configureArtemis(
     jobName: String,
@@ -608,6 +692,7 @@ private fun setupImageTaskBuilder(
         .withName(jobName)
         .endMetadata()
         .withNewSpec()
+        .withTtlSecondsAfterFinished(100)
         .withNewTemplate()
         .withNewSpec()
         .addNewContainer()
@@ -648,13 +733,13 @@ private fun secretVolumeWithAll(
 private fun secretEnvVar(
     key: String,
     secretName: String,
-    tunnelKeyStorePasswordKey: String
+    secretKey: String
 ): V1EnvVar {
     return V1EnvVarBuilder().withName(key)
         .withNewValueFrom()
         .withNewSecretKeyRef()
         .withName(secretName)
-        .withKey(tunnelKeyStorePasswordKey)
+        .withKey(secretKey)
         .endSecretKeyRef()
         .endValueFrom()
         .build()

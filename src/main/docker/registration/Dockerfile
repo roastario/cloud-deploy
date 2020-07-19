@@ -18,6 +18,8 @@ COPY perform-registration.sh /usr/bin/perform-registration
 COPY generate-artemis-keystores.sh /usr/bin/generate-artemis-keystores
 COPY generate-tunnel-keystores.sh /usr/bin/generate-tunnel-keystores
 COPY configure-artemis.sh /usr/bin/configure-artemis
+COPY import-node-ssl-to-bridge.sh /usr/bin/import-node-ssl-to-bridge
+
 COPY licenseAgreementCheck.sh /usr/bin/licenseAgreementCheck
 
 RUN chmod +x /usr/bin/perform-registration /usr/bin/generate-artemis-keystores /usr/bin/generate-tunnel-keystores /usr/bin/configure-artemis
