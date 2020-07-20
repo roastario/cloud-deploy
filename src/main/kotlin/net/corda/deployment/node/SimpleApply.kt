@@ -5,12 +5,14 @@ import io.github.classgraph.ClassInfo
 import io.github.classgraph.MethodInfo
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.ApiException
+import io.kubernetes.client.openapi.apis.AppsV1Api
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1Namespace
 import io.kubernetes.client.openapi.models.V1ObjectMeta
 import io.kubernetes.client.util.ClientBuilder
 import net.corda.deployment.node.kubernetes.allowAllFailures
 import java.lang.IllegalStateException
+import java.lang.reflect.InvocationTargetException
 import java.util.*
 import kotlin.collections.HashMap
 import kotlin.math.max
@@ -115,17 +117,20 @@ val simpleApply = object : SimpleApplier {
                 println("using: ${apiClass.canonicalName}.${method.name} to create an instance of ${classOfObjectToCreate.canonicalName} (name=${metaData?.name})")
                 if (info.namespaced) {
                     try {
-                        method.invoke(apiInstance, namespace, o, null, null, null)
-                    } catch (ae: ApiException) {
-                        System.err.println(ae.responseBody)
-                        throw ae
+                        method.invoke(apiInstance, namespace, o, "true", null, null)
+                    } catch (e: InvocationTargetException) {
+                        if (e.cause is ApiException){
+                            System.err.println((e.cause as ApiException).responseBody)
+                        }
                     }
                 } else {
                     try {
                         method.invoke(apiInstance, o, null, null, null)
-                    } catch (ae: ApiException) {
-                        System.err.println(ae.responseBody)
-                        throw ae
+                    } catch (e: InvocationTargetException) {
+                        if (e.cause is ApiException){
+                            System.err.println((e.cause as ApiException).responseBody)
+                        }
+                        throw e
                     }
                 }
             }

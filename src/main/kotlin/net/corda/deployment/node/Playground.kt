@@ -3,8 +3,12 @@ package net.corda.deployment.node
 import com.google.gson.reflect.TypeToken
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
+import com.microsoft.azure.management.compute.Disk
+import com.microsoft.azure.management.compute.DiskSkuTypes
+import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.rest.LogLevel
 import io.kubernetes.client.PodLogs
+import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.apis.BatchV1Api
 import io.kubernetes.client.openapi.apis.CoreV1Api
@@ -20,10 +24,7 @@ import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
-import net.corda.deployments.node.config.ArtemisConfigParams
-import net.corda.deployments.node.config.AzureKeyVaultConfigParams
-import net.corda.deployments.node.config.BridgeConfigParams
-import net.corda.deployments.node.config.NodeConfigParams
+import net.corda.deployments.node.config.*
 import okhttp3.OkHttpClient
 import org.apache.commons.io.IOUtils
 import org.apache.commons.lang3.RandomStringUtils
@@ -53,6 +54,7 @@ fun main(args: Array<String>) {
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
     val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
 
+
     val defaultClientSource = { ClientBuilder.defaultClient() }
 
     val azureFileShareCreator = AzureFileShareCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
@@ -73,7 +75,7 @@ fun main(args: Array<String>) {
 
     val nodeTrustStorePassword = RandomStringUtils.randomAlphanumeric(20)
 
-    val artemisStoreDirectory = azureFileShareCreator.createDirectoryFor("artemis-stores")
+    val artemisStoresShare = azureFileShareCreator.createDirectoryFor("artemis-stores")
 
     val artemisSecretsName = "artemis-${randSuffix}"
     val artemisStorePassSecretKey = "artemisstorepass"
@@ -219,7 +221,7 @@ fun main(args: Array<String>) {
     )
 
 
-    val tunnelStoresDirectory = azureFileShareCreator.createDirectoryFor("tunnel-stores")
+    val tunnelStoresShare = azureFileShareCreator.createDirectoryFor("tunnel-stores")
     val tunnelSecretName = "tunnel-store-secrets-$randSuffix"
     val tunnelEntryPasswordKey = "tunnelentrypassword"
     val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
@@ -242,7 +244,7 @@ fun main(args: Array<String>) {
         artemisSecretsName,
         artemisStorePassSecretKey,
         artemisTrustPassSecretKey,
-        artemisStoreDirectory
+        artemisStoresShare
     )
 
     val generateTunnelStoresJob = generateTunnelStores(
@@ -252,10 +254,10 @@ fun main(args: Array<String>) {
         tunnelKeyStorePasswordKey,
         tunnelTrustStorePasswordKey,
         tunnelEntryPasswordKey,
-        tunnelStoresDirectory
+        tunnelStoresShare
     )
 
-    val artemisConfigShare = azureFileShareCreator.createDirectoryFor("artemis-config")
+    val artemisInstalledBrokerShare = azureFileShareCreator.createDirectoryFor("artemis-config")
     val configureArtemisJobName = "configure-artemis-$randSuffix"
     val configureArtemisJob = configureArtemis(
         configureArtemisJobName,
@@ -264,8 +266,8 @@ fun main(args: Array<String>) {
         artemisStorePassSecretKey,
         artemisTrustPassSecretKey,
         artemisClusterPassSecretKey,
-        artemisStoreDirectory,
-        artemisConfigShare
+        artemisStoresShare,
+        artemisInstalledBrokerShare
     )
 
     val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${randSuffix}"
@@ -313,6 +315,15 @@ fun main(args: Array<String>) {
     simpleApply.create(importNodeKeyStoreToBridgeJob, namespace)
     waitForJob(namespace, importNodeKeyStoreToBridgeJob, defaultClientSource)
     dumpLogsForJob(defaultClientSource, importNodeKeyStoreToBridgeJob)
+
+    val artemisDeployment =
+        createArtemisDeployment(namespace, azureFilesSecretName, artemisInstalledBrokerShare, artemisStoresShare, null, randSuffix)
+
+    println(Yaml.dump(artemisDeployment))
+    simpleApply.create(artemisDeployment, namespace, defaultClientSource())
+
+    val floatTunnelShare = azureFileShareCreator.createDirectoryFor("float-tunnel")
+    tunnelStoresShare.fileShare.rootDirectoryReference.getFileReference(FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_LOCATION)
 
     exitProcess(0)
 }
@@ -373,6 +384,106 @@ private fun dumpLogsForJob(clientSource: () -> ApiClient, job: V1Job) {
     logStream.use {
         IOUtils.copy(it, System.out, 128)
     }
+}
+
+//private fun createFloatDeployment(): V1Deployment {
+//
+//}
+
+private fun createArtemisDeployment(
+    devNamespace: String,
+    azureFilesSecretName: String,
+    configShare: AzureFilesDirectory,
+    storesShare: AzureFilesDirectory,
+    dataDisk: Disk?,
+    runId: String
+): V1Deployment {
+    val dataMountName = "artemis-data"
+    val brokerBaseDirShare = "artemis-config"
+    val storesMountName = "artemis-stores"
+    val artemisDeployment = V1DeploymentBuilder()
+        .withKind("Deployment")
+        .withApiVersion("apps/v1")
+        .withNewMetadata()
+        .withName("artemis-$runId")
+        .withNamespace(devNamespace)
+        .endMetadata()
+        .withNewSpec()
+        .withNewSelector()
+        .withMatchLabels(listOf("run" to "artemis-$runId").toMap())
+        .endSelector()
+        .withReplicas(1)
+        .withNewTemplate()
+        .withNewMetadata()
+        .withLabels(listOf("run" to "artemis-$runId").toMap())
+        .endMetadata()
+        .withNewSpec()
+        .addNewContainer()
+        .withName("artemis-$runId")
+        .withImage("corda/setup:latest")
+        .withImagePullPolicy("IfNotPresent")
+        .withCommand("run-artemis")
+        .withEnv(V1EnvVarBuilder().withName("JAVA_ARGS").withValue("-XX:+UseParallelGC -Xms512M -Xmx768M").build())
+        .withPorts(
+            V1ContainerPortBuilder().withName("artemis-port").withContainerPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT).build()
+        ).withNewResources()
+        .withRequests(listOf("memory" to Quantity("1024Mi"), "cpu" to Quantity("0.5")).toMap())
+        .endResources()
+        .withVolumeMounts(
+//            V1VolumeMountBuilder()
+//                .withName(dataMountName)
+//                .withMountPath(ArtemisConfigParams.ARTEMIS_DATA_DIRECTORY).build(),
+            V1VolumeMountBuilder()
+                .withName(brokerBaseDirShare)
+                .withMountPath(ArtemisConfigParams.ARTEMIS_BROKER_BASE_DIR).build(),
+            V1VolumeMountBuilder()
+                .withName(storesMountName)
+                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIR).build()
+        )
+        .endContainer()
+        .withVolumes(
+            azureFileMount(brokerBaseDirShare, configShare, azureFilesSecretName, true),
+            azureFileMount(storesMountName, storesShare, azureFilesSecretName, true)
+//            V1VolumeBuilder()
+//                .withNewAzureDisk()
+//                .withKind("Managed")
+//                .withDiskName(dataDisk.name())
+//                .withDiskURI(dataDisk.id())
+//                .endAzureDisk()
+//                .build()
+        )
+        .withNewSecurityContext()
+        //artemis is 1001
+        .withRunAsUser(1001)
+        .withRunAsGroup(1001)
+        .withFsGroup(1001)
+        .withRunAsNonRoot(true)
+        .endSecurityContext()
+        .endSpec()
+        .endTemplate()
+        .endSpec()
+        .build()
+
+    return artemisDeployment
+
+}
+
+private fun createDiskForArtemis(
+    azure: Azure,
+    resourceGroup: ResourceGroup,
+    runId: String
+): Disk {
+
+    val disk = azure.disks().define("artemis-$runId")
+        .withRegion(resourceGroup.region())
+        .withExistingResourceGroup(resourceGroup)
+        .withData()
+        .withSizeInGB(200)
+        .withSku(DiskSkuTypes.PREMIUM_LRS)
+        .create()
+
+    return disk
+
 }
 
 private fun importNodeKeyStoreToBridgeJob(
@@ -442,7 +553,7 @@ private fun configureArtemis(
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
     val storesDirMountName = "storesdir"
-    val workingDir = "/tmp/artemisConfig"
+    val workingDir = ArtemisConfigParams.ARTEMIS_BROKER_BASE_DIR
     return setupImageTaskBuilder(jobName, listOf("configure-artemis"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
@@ -450,7 +561,7 @@ private fun configureArtemis(
                 .withMountPath(workingDir).build(),
             V1VolumeMountBuilder()
                 .withName(storesDirMountName)
-                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIRECTORY).build()
+                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIR).build()
         )
         .withEnv(
             licenceAcceptEnvVar(),
@@ -463,6 +574,7 @@ private fun configureArtemis(
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT.toString()),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_KEYSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PATH),
             keyValueEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH),
+            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_DATA_DIR_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_DATA_DIR_PATH),
             secretEnvVar(ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisStorePassSecretKey),
             secretEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisTrustPassSecretKey),
             secretEnvVar(ArtemisConfigParams.ARTEMIS_CLUSTER_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisClusterPassSecretKey)
@@ -473,6 +585,13 @@ private fun configureArtemis(
             azureFileMount(storesDirMountName, artemisStoresDirectory, azureFilesSecretName, true)
         )
         .withRestartPolicy("Never")
+        .withNewSecurityContext()
+        //artemis is 1001
+        .withRunAsUser(1001)
+        .withRunAsGroup(1001)
+        .withFsGroup(1001)
+        .withRunAsNonRoot(true)
+        .endSecurityContext()
         .endSpec()
         .endTemplate()
         .endSpec()

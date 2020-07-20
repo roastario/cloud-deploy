@@ -2,7 +2,11 @@ package net.corda.deployments.node.config;
 
 public class ArtemisConfigParams {
 
-    public static final String ARTEMIS_BASE_DIR = "/opt/artemis";
+    public static final String ARTEMIS_BROKER_BASE_DIR = "/opt/artemis-broker";
+    public static final String ARTEMIS_STORES_DIR = "/etc/artemis";
+
+    public static final String ARTEMIS_DATA_DIR_ENV_VAR_NAME = "ARTEMIS_DATA_DIR";
+    public static final String ARTEMIS_DATA_DIR_PATH = "/opt/artemis-data";
 
     public static final String ARTEMIS_CERTIFICATE_ORGANISATION = "CordaDeployerTunnel";
     public static final String ARTEMIS_CERTIFICATE_ORGANISATION_ENV_VAR_NAME = "ORGANISATION";
@@ -31,19 +35,12 @@ public class ArtemisConfigParams {
     public static final String ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
     public static final String ARTEMIS_CLUSTER_PASSWORD_ENV_VAR_NAME = "ARTEMIS_CLUSTER_PASSWORD";
 
-
-    public static final String ARTEMIS_STORES_DIRECTORY = "/opt/artemis/stores";
-
     public static final String ARTEMIS_TRUSTSTORE_FILENAME = "artemis-truststore.jks";
     public static final String ARTEMIS_SSL_KEYSTORE_FILENAME = "artemis.jks";
     public static final String ARTEMIS_NODE_KEYSTORE_FILENAME = "artemisnode.jks";
     public static final String ARTEMIS_BRIDGE_KEYSTORE_FILENAME = "artemisbridge.jks";
 
-    public static final String ARTEMIS_SSL_KEYSTORE_PATH = ARTEMIS_STORES_DIRECTORY + "/" + ARTEMIS_SSL_KEYSTORE_FILENAME;
-    public static final String ARTEMIS_TRUSTSTORE_PATH = ARTEMIS_STORES_DIRECTORY + "/" + ARTEMIS_TRUSTSTORE_FILENAME;
-
-    public static final String ARTEMIS_DATA_DIRECTORY = ARTEMIS_BASE_DIR + "/" + "data";
-    public static final String ARTEMIS_CONFIG_DIRECTORY = ARTEMIS_BASE_DIR + "/" + "etc";
-
+    public static final String ARTEMIS_SSL_KEYSTORE_PATH = ARTEMIS_STORES_DIR + "/" + ARTEMIS_SSL_KEYSTORE_FILENAME;
+    public static final String ARTEMIS_TRUSTSTORE_PATH = ARTEMIS_STORES_DIR + "/" + ARTEMIS_TRUSTSTORE_FILENAME;
 
 }

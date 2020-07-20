@@ -111,6 +111,7 @@ task buildSetupImageDir(type: Copy, dependsOn: [project(":azure-keyvault-jar-bui
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/generate-tunnel-keystores.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/configure-artemis.sh").first())
     from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/import-node-ssl-to-bridge.sh").first())
+    from(new FileNameFinder().getFileNames(project.projectDir.absolutePath, "**/shell/run-artemis.sh").first())
     into(resourceDir)
 
     doFirst {

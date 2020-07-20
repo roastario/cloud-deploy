@@ -34,6 +34,16 @@ public final class FloatConfigParams implements SubstitutableSource {
     @NotNull
     public static final String FLOAT_NETWORK_PARAMETERS_PATH = "/opt/corda/network/network-params";
 
+    public static final String FLOAT_CERTIFICATES_DIR = FLOAT_BASE_DIR + "/certificates";
+    public static final String FLOAT_SSL_KEYSTORE_FILENAME = "float.jks";
+    public static final String FLOAT_SSL_KEYSTORE_PATH = FLOAT_CERTIFICATES_DIR + "/" + FLOAT_SSL_KEYSTORE_FILENAME;
+    public static final String FLOAT_TRUSTSTORE_FILENAME = "truststore.jks";
+    public static final String FLOAT_TRUSTSTORE_PATH = FLOAT_CERTIFICATES_DIR + "/" + FLOAT_TRUSTSTORE_FILENAME;
+
+    public static final String FLOAT_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME;
+    public static final String FLOAT_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME;
+    public static final String FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME;
+
     public FloatConfigParams(@NotNull String externalBindAddress,
                              @NotNull Integer externalPort,
                              @NotNull String internalBindAddress,

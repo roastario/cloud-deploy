@@ -4,6 +4,8 @@
   cd "${WORKING_DIR}" && java -jar /opt/corda/ha-utilities.jar configure-artemis \
     --verbose \
     --logging-level=DEBUG \
+    --install \
+    --distribution="/opt/artemis-dist" \
     --path="${WORKING_DIR}" \
     --user="${ARTEMIS_X500}" \
     --acceptor-address=${ACCEPTOR_ADDRESS}:${ACCEPTOR_PORT} \
@@ -13,4 +15,5 @@
     --truststore-password="${ARTEMIS_TRUSTSTORE_PASSWORD}" \
     --cluster-password "${ARTEMIS_CLUSTER_PASSWORD}"
 
+    sed -i "s|\./data|${ARTEMIS_DATA_DIR}|g" etc/broker.xml
 )
