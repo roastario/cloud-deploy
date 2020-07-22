@@ -43,4 +43,5 @@ public class ArtemisConfigParams {
     public static final String ARTEMIS_SSL_KEYSTORE_PATH = ARTEMIS_STORES_DIR + "/" + ARTEMIS_SSL_KEYSTORE_FILENAME;
     public static final String ARTEMIS_TRUSTSTORE_PATH = ARTEMIS_STORES_DIR + "/" + ARTEMIS_TRUSTSTORE_FILENAME;
 
+
 }

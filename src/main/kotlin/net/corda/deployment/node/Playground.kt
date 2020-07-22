@@ -1,20 +1,15 @@
 package net.corda.deployment.node
 
-import com.google.gson.reflect.TypeToken
+import com.azure.storage.file.share.ShareFileClient
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.compute.Disk
 import com.microsoft.azure.management.compute.DiskSkuTypes
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.rest.LogLevel
-import io.kubernetes.client.PodLogs
 import io.kubernetes.client.custom.Quantity
-import io.kubernetes.client.openapi.ApiClient
-import io.kubernetes.client.openapi.apis.BatchV1Api
-import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
-import io.kubernetes.client.util.Watch
 import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.database.H2_DB
@@ -24,15 +19,12 @@ import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
+import net.corda.deployment.node.storage.uploadFromByteArray
 import net.corda.deployments.node.config.*
-import okhttp3.OkHttpClient
-import org.apache.commons.io.IOUtils
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 import java.time.Duration
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import kotlin.system.exitProcess
 
 
@@ -59,22 +51,21 @@ fun main(args: Array<String>) {
 
     val azureFileShareCreator = AzureFileShareCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
 
-    val nodeCertificatesShare = azureFileShareCreator.createDirectoryFor("node-certificates")
-    val networkParametersShare = azureFileShareCreator.createDirectoryFor("network-files")
+
+    val initialRegistrationResultShare = azureFileShareCreator.createDirectoryFor("node-certificates")
+    val networkParametersFromInitialRegistrationShare = azureFileShareCreator.createDirectoryFor("network-files")
     val azureFilesSecretName = "azure-files-secret-$randSuffix"
     SecretCreator.createStringSecret(
         azureFilesSecretName,
         listOf(
-            "azurestorageaccountname" to nodeCertificatesShare.storageAccount.name(),
-            "azurestorageaccountkey" to nodeCertificatesShare.storageAccount.keys[0].value()
+            "azurestorageaccountname" to initialRegistrationResultShare.storageAccount.name(),
+            "azurestorageaccountkey" to initialRegistrationResultShare.storageAccount.keys[0].value()
         ).toMap()
         , namespace, defaultClientSource
     )
 
     val dbParams = H2_DB
-
     val nodeTrustStorePassword = RandomStringUtils.randomAlphanumeric(20)
-
     val artemisStoresShare = azureFileShareCreator.createDirectoryFor("artemis-stores")
 
     val artemisSecretsName = "artemis-${randSuffix}"
@@ -216,8 +207,8 @@ fun main(args: Array<String>) {
         nodeStoresSecretName,
         nodeKeyStorePasswordSecretKey,
         nodeTrustStorePasswordSecretKey,
-        nodeCertificatesShare,
-        networkParametersShare
+        initialRegistrationResultShare,
+        networkParametersFromInitialRegistrationShare
     )
 
 
@@ -292,7 +283,7 @@ fun main(args: Array<String>) {
         nodeKeyStorePasswordSecretKey,
         bridgeCertificatesSecretName,
         bridgeSSLKeyStorePasswordSecretKey,
-        nodeCertificatesShare,
+        initialRegistrationResultShare,
         bridgeCertificatesShare
     )
 
@@ -323,158 +314,259 @@ fun main(args: Array<String>) {
     simpleApply.create(artemisDeployment, namespace, defaultClientSource())
 
     val floatTunnelShare = azureFileShareCreator.createDirectoryFor("float-tunnel")
-    tunnelStoresShare.fileShare.rootDirectoryReference.getFileReference(FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_LOCATION)
+
+
+    val generatedTunnelTrustStoreFileReference =
+        tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
+
+    val generatedFloatTunnelKeyStoreFileReference =
+        tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
+
+    val generatedBridgeTunnelKeyStoreFileReference =
+        tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_BRDIGE_KEYSTORE_FILENAME)
+
+    val floatTunnelTrustStoreFileReference =
+        floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
+
+    val floatTunnelKeyStoreFileReference =
+        floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
+
+    floatTunnelTrustStoreFileReference.createFrom(generatedTunnelTrustStoreFileReference)
+    floatTunnelKeyStoreFileReference.createFrom(generatedFloatTunnelKeyStoreFileReference)
+
+    val floatConfig = FloatConfigParams.builder()
+        .withBaseDir(FloatConfigParams.FLOAT_BASE_DIR)
+        .withExpectedBridgeCertificateSubject(BridgeConfigParams.BRIDGE_CERTIFICATE_SUBJECT)
+        .withExternalBindAddress(FloatConfigParams.ALL_LOCAL_ADDRESSES)
+        .withExternalPort(FloatConfigParams.FLOAT_EXTERNAL_PORT)
+        .withInternalBindAddress(FloatConfigParams.ALL_LOCAL_ADDRESSES)
+        .withInternalPort(FloatConfigParams.FLOAT_INTERNAL_PORT)
+        .withNetworkParametersPath(FloatConfigParams.FLOAT_NETWORK_PARAMETERS_PATH)
+        .withTunnelKeyStorePassword(FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelKeystorePath(FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_PATH)
+        .withTunnelTrustStorePassword(FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelTrustStorePath(FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PATH)
+        .withTunnelStoresEntryPassword(FloatConfigParams.FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .build()
+
+    val floatConfigShare = azureFileShareCreator.createDirectoryFor("float-config")
+    val floatConfigFileReference =
+        floatConfigShare.legacyClient.rootDirectoryReference.getFileReference(FloatConfigParams.FLOAT_CONFIG_FILENAME)
+    floatConfigFileReference.uploadFromByteArray(ConfigGenerators.generateConfigFromParams(floatConfig).toByteArray(Charsets.UTF_8))
+
+    val floatNetworkParamsShare = azureFileShareCreator.createDirectoryFor("float-network-params")
+    val floatNetworkParamsFileReference =
+        floatNetworkParamsShare.modernClient.rootDirectoryClient.getFileClient(FloatConfigParams.FLOAT_NETWORK_PARAMS_FILENAME)
+    val generatedNetworkParamsFileReference =
+        networkParametersFromInitialRegistrationShare.modernClient.rootDirectoryClient.getFileClient(NodeConfigParams.NETWORK_PARAMETERS_FILENAME)
+
+    floatNetworkParamsFileReference.createFrom(generatedNetworkParamsFileReference)
+
+    val floatDeployment = createFloatDeployment(
+        namespace,
+        randSuffix,
+        floatConfigShare,
+        floatTunnelShare,
+        floatNetworkParamsShare,
+        tunnelSecretName,
+        tunnelKeyStorePasswordKey,
+        tunnelTrustStorePasswordKey,
+        tunnelEntryPasswordKey,
+        azureFilesSecretName
+    )
+
+    println(Yaml.dump(floatDeployment))
+    simpleApply.create(floatDeployment, namespace, defaultClientSource())
+
+    val artemisAddress = "artemisAddress"
+    val floatAddress = "floatAddress"
+    val bridgeConfig = BridgeConfigParams.builder()
+        .withArtemisAddress(artemisAddress)
+        .withArtemisPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
+        .withArtemisKeyStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_SSL_KEYSTORE_PATH)
+        .withArtemisKeyStorePassword(BridgeConfigParams.BRIDGE_ARTEMIS_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withArtemisTrustStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PATH)
+        .withArtemisTrustStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withFloatAddress(floatAddress)
+        .withFloatPort(FloatConfigParams.FLOAT_INTERNAL_PORT)
+        .withExpectedFloatCertificateSubject(FloatConfigParams.FLOAT_CERTIFICATE_SUBJECT)
+        .withTunnelKeyStorePath(BridgeConfigParams.BRIDGE_TUNNEL_SSL_KEYSTORE_PATH)
+        .withTunnelKeyStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelTrustStorePath(BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PATH)
+        .withTunnelTrustStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelEntryPassword(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withNetworkParamsPath(BridgeConfigParams.BRIDGE_NETWORK_PARAMETERS_PATH)
+        .withBridgeKeyStorePath(BridgeConfigParams.BRIDGE_SSL_KEYSTORE_PATH)
+        .withBridgeKeyStorePassword(BridgeConfigParams.BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withBridgeTrustStorePath(BridgeConfigParams.BRIDGE_TRUSTSTORE_PATH)
+        .withBridgeTrustStorePassword(BridgeConfigParams.BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .build()
+
+    val bridgeConfigShare = azureFileShareCreator.createDirectoryFor("bridge-config")
+    val bridgeConfigFileReference = bridgeConfigShare.legacyClient.rootDirectoryReference.getFileReference(BridgeConfigParams.BRIDGE_CONFIG_FILENAME)
+    bridgeConfigFileReference.uploadFromByteArray(ConfigGenerators.generateConfigFromParams(bridgeConfig).toByteArray(Charsets.UTF_8))
+
+    val bridgeNetworkParamsShare = azureFileShareCreator.createDirectoryFor("bridge-network-params")
+    val bridgeNetworkParamsFileReference =
+        bridgeNetworkParamsShare.modernClient.rootDirectoryClient.getFileClient(BridgeConfigParams.BRIDGE_NETWORK_PARAMETERS_FILENAME)
+
+    bridgeNetworkParamsFileReference.createFrom(generatedNetworkParamsFileReference)
+
+    val bridgeTunnelShare = azureFileShareCreator.createDirectoryFor("bridge-tunnel")
+    val bridgeTunnelTrustStoreFileReference =
+        bridgeTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
+    val bridgeTunnelKeyStoreFileReference =
+        bridgeTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_BRDIGE_KEYSTORE_FILENAME)
+    bridgeTunnelTrustStoreFileReference.createFrom(generatedTunnelTrustStoreFileReference)
+    bridgeTunnelKeyStoreFileReference.createFrom(generatedBridgeTunnelKeyStoreFileReference)
+
+    val bridgeArtemisStoresShare = azureFileShareCreator.createDirectoryFor("bridge-artemis-stores")
+    val bridgeArtemisKeyStoreFileReference =
+        bridgeArtemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
+    val bridgeArtemisTrustStoreFileReference =
+        bridgeArtemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
+
+    val generatedArtemisBridgeKeyStoreFileReference = artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
+    val generatedArtemisTrustStoreFileReference = artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
+
+    bridgeArtemisKeyStoreFileReference.createFrom(generatedArtemisBridgeKeyStoreFileReference)
+    bridgeArtemisTrustStoreFileReference.createFrom(generatedArtemisTrustStoreFileReference)
+
+
 
     exitProcess(0)
 }
 
-private fun waitForJob(
-    namespace: String,
-    job: V1Job,
-    clientSource: () -> ApiClient,
-    duration: Duration = Duration.ofMinutes(5)
-): V1Job {
-    val client = clientSource()
-    val httpClient: OkHttpClient = client.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build()
-    client.httpClient = httpClient
-    val api = BatchV1Api(client)
-    val watch: Watch<V1Job> = Watch.createWatch(
-        client,
-        api.listNamespacedJobCall(
-            namespace,
-            null,
-            null,
-            null,
-            null,
-            "job-name=${job.metadata?.name}",
-            null,
-            null,
-            duration.toSeconds().toInt(),
-            true,
-            null
-        ),
-        object : TypeToken<Watch.Response<V1Job>>() {}.type
+fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Duration.ofMinutes(5)) {
+    val sizeToCopy = source.properties.contentLength
+    if (!this.exists()) {
+        this.create(sizeToCopy)
+    }
+    val poller = this.beginCopy(
+        source.fileUrl,
+        null,
+        null
     )
-
-    watch.use {
-        watch.forEach {
-            if (it.`object`.status?.succeeded == 1) {
-                return it.`object`
-            } else {
-                println("job ${job.metadata?.name} has not completed yet")
-            }
-        }
-    }
-
-    throw TimeoutException("job ${job.metadata?.name} did not complete within expected time")
+    poller.waitForCompletion(timeout)
 }
 
-private fun dumpLogsForJob(clientSource: () -> ApiClient, job: V1Job) {
-    val client = clientSource()
-    val pod = CoreV1Api(client).listNamespacedPod(
-        "testingzone",
-        "true",
-        null,
-        null,
-        null,
-        "job-name=${job.metadata?.name}", 10, null, 30, false
-    ).items.first()
-    val logs = PodLogs(client.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
-    val logStream = logs.streamNamespacedPodLog(pod)
-    logStream.use {
-        IOUtils.copy(it, System.out, 128)
-    }
-}
 
-//private fun createFloatDeployment(): V1Deployment {
-//
-//}
-
-private fun createArtemisDeployment(
-    devNamespace: String,
-    azureFilesSecretName: String,
-    configShare: AzureFilesDirectory,
-    storesShare: AzureFilesDirectory,
-    dataDisk: Disk?,
-    runId: String
+fun createFloatDeployment(
+    namespace: String,
+    runId: String,
+    floatConfigShare: AzureFilesDirectory,
+    tunnelStoresShare: AzureFilesDirectory,
+    networkParametersShare: AzureFilesDirectory,
+    tunnelStoresSecretName: String,
+    tunnelSSLKeysStorePasswordSecretKey: String,
+    tunnelTrustStorePasswordSecretKey: String,
+    tunnelEntryPasswordKey: String,
+    azureFilesSecretName: String
 ): V1Deployment {
-    val dataMountName = "artemis-data"
-    val brokerBaseDirShare = "artemis-config"
-    val storesMountName = "artemis-stores"
-    val artemisDeployment = V1DeploymentBuilder()
+    val configDirMountName = "config-dir"
+    val tunnelStoresMountName = "tunnel-stores-dir"
+    val networkParametersMountName = "network-parameters-dir"
+    return V1DeploymentBuilder()
         .withKind("Deployment")
         .withApiVersion("apps/v1")
         .withNewMetadata()
-        .withName("artemis-$runId")
-        .withNamespace(devNamespace)
+        .withNamespace(namespace)
+        .withName("float-${runId}")
+        .withLabels(listOf("dmz" to "true").toMap())
         .endMetadata()
         .withNewSpec()
         .withNewSelector()
-        .withMatchLabels(listOf("run" to "artemis-$runId").toMap())
+        .withMatchLabels(listOf("run" to "float-$runId").toMap())
         .endSelector()
         .withReplicas(1)
         .withNewTemplate()
         .withNewMetadata()
-        .withLabels(listOf("run" to "artemis-$runId").toMap())
+        .withLabels(listOf("run" to "float-$runId").toMap())
         .endMetadata()
         .withNewSpec()
         .addNewContainer()
-        .withName("artemis-$runId")
-        .withImage("corda/setup:latest")
+        .withName("float-$runId")
+        .withImage("corda/firewall:latest")
         .withImagePullPolicy("IfNotPresent")
-        .withCommand("run-artemis")
-        .withEnv(V1EnvVarBuilder().withName("JAVA_ARGS").withValue("-XX:+UseParallelGC -Xms512M -Xmx768M").build())
+        .withCommand("run-firewall")
+        .withEnv(
+            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -Xmx800M").build(),
+            V1EnvVarBuilder().withName("CONFIG_FILE").withValue(FloatConfigParams.FLOAT_CONFIG_PATH).build(),
+            V1EnvVarBuilder().withName(FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME).withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
+            V1EnvVarBuilder().withName("BASE_DIR").withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
+            secretEnvVar(
+                FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
+                tunnelStoresSecretName,
+                tunnelSSLKeysStorePasswordSecretKey
+            ),
+            secretEnvVar(
+                FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                tunnelStoresSecretName,
+                tunnelTrustStorePasswordSecretKey
+            ),
+            secretEnvVar(
+                FloatConfigParams.FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME,
+                tunnelStoresSecretName,
+                tunnelEntryPasswordKey
+            )
+        )
         .withPorts(
-            V1ContainerPortBuilder().withName("artemis-port").withContainerPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT).build()
+            V1ContainerPortBuilder().withName("float-external").withContainerPort(
+                FloatConfigParams.FLOAT_EXTERNAL_PORT
+            ).build(),
+            V1ContainerPortBuilder().withName("float-internal").withContainerPort(
+                FloatConfigParams.FLOAT_INTERNAL_PORT
+            ).build()
         ).withNewResources()
-        .withRequests(listOf("memory" to Quantity("1024Mi"), "cpu" to Quantity("0.5")).toMap())
+        .withRequests(
+            listOf(
+                "memory" to Quantity("1024Mi"), "cpu" to Quantity(
+                    "0.5"
+                )
+            ).toMap()
+        )
         .endResources()
         .withVolumeMounts(
-//            V1VolumeMountBuilder()
-//                .withName(dataMountName)
-//                .withMountPath(ArtemisConfigParams.ARTEMIS_DATA_DIRECTORY).build(),
-            V1VolumeMountBuilder()
-                .withName(brokerBaseDirShare)
-                .withMountPath(ArtemisConfigParams.ARTEMIS_BROKER_BASE_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(storesMountName)
-                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIR).build()
+            listOfNotNull(
+                V1VolumeMountBuilder()
+                    .withName(configDirMountName)
+                    .withMountPath(FloatConfigParams.FLOAT_CONFIG_DIR).build(),
+                V1VolumeMountBuilder()
+                    .withName(tunnelStoresMountName)
+                    .withMountPath(FloatConfigParams.FLOAT_TUNNEL_STORES_DIR).build(),
+                V1VolumeMountBuilder()
+                    .withName(networkParametersMountName)
+                    .withMountPath(FloatConfigParams.FLOAT_NETWORK_DIR).build()
+            )
         )
         .endContainer()
         .withVolumes(
-            azureFileMount(brokerBaseDirShare, configShare, azureFilesSecretName, true),
-            azureFileMount(storesMountName, storesShare, azureFilesSecretName, true)
-//            V1VolumeBuilder()
-//                .withNewAzureDisk()
-//                .withKind("Managed")
-//                .withDiskName(dataDisk.name())
-//                .withDiskURI(dataDisk.id())
-//                .endAzureDisk()
-//                .build()
+            listOfNotNull(
+                azureFileMount(configDirMountName, floatConfigShare, azureFilesSecretName, true),
+                azureFileMount(tunnelStoresMountName, tunnelStoresShare, azureFilesSecretName, true),
+                azureFileMount(networkParametersMountName, networkParametersShare, azureFilesSecretName, true)
+            )
         )
         .withNewSecurityContext()
-        //artemis is 1001
-        .withRunAsUser(1001)
-        .withRunAsGroup(1001)
-        .withFsGroup(1001)
+        //corda is 1000
+        .withRunAsUser(1000)
+        .withRunAsGroup(1000)
+        .withFsGroup(1000)
         .withRunAsNonRoot(true)
         .endSecurityContext()
         .endSpec()
         .endTemplate()
         .endSpec()
         .build()
-
-    return artemisDeployment
-
 }
 
-private fun createDiskForArtemis(
+fun createDiskForArtemis(
     azure: Azure,
     resourceGroup: ResourceGroup,
     runId: String
 ): Disk {
 
-    val disk = azure.disks().define("artemis-$runId")
+    return azure.disks().define("artemis-$runId")
         .withRegion(resourceGroup.region())
         .withExistingResourceGroup(resourceGroup)
         .withData()
@@ -482,396 +574,8 @@ private fun createDiskForArtemis(
         .withSku(DiskSkuTypes.PREMIUM_LRS)
         .create()
 
-    return disk
-
 }
 
-private fun importNodeKeyStoreToBridgeJob(
-    jobName: String,
-    azureFilesSecretName: String,
-    nodeCertificatesSecretName: String,
-    nodeKeyStorePasswordSecretKey: String,
-    bridgeCertificatesSecretName: String,
-    bridgeKeyStorePasswordSecretKey: String,
-    nodeCertificatesShare: AzureFilesDirectory,
-    workingDirShare: AzureFilesDirectory
-): V1Job {
-    val workingDirPath = "/tmp/bridgeImport"
-    val nodeCertificatesPath = "/tmp/nodeCerts"
-    val workingDirMountName = "azureworkingdir"
-    val nodeCertificatesMountName = "azurenodecerts"
-    val nodeSSLKeystorePath = "$nodeCertificatesPath/${NodeConfigParams.NODE_SSL_KEYSTORE_FILENAME}"
-    val bridgeSSLKeystorePath = "$workingDirPath/${BridgeConfigParams.BRIDGE_SSL_KEYSTORE_FILENAME}"
-
-    val importJob = setupImageTaskBuilder(jobName, listOf("import-node-ssl-to-bridge"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName(workingDirMountName)
-                .withMountPath(workingDirPath).build(),
-            V1VolumeMountBuilder()
-                .withName(nodeCertificatesMountName)
-                .withMountPath(nodeCertificatesPath).build()
-        )
-        .withImagePullPolicy("IfNotPresent")
-        .withEnv(
-            licenceAcceptEnvVar(),
-            keyValueEnvVar("WORKING_DIR", workingDirPath),
-            keyValueEnvVar(
-                "NODE_KEYSTORE_TO_IMPORT",
-                nodeSSLKeystorePath
-            ),
-            keyValueEnvVar(
-                "BRIDGE_KEYSTORE",
-                bridgeSSLKeystorePath
-            ),
-            secretEnvVar("NODE_KEYSTORE_PASSWORD", nodeCertificatesSecretName, nodeKeyStorePasswordSecretKey),
-            secretEnvVar("BRIDGE_KEYSTORE_PASSWORD", bridgeCertificatesSecretName, bridgeKeyStorePasswordSecretKey)
-        )
-        .endContainer()
-        .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
-            azureFileMount(nodeCertificatesMountName, nodeCertificatesShare, azureFilesSecretName, true)
-        )
-        .withRestartPolicy("Never")
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
-    return importJob
-}
-
-
-private fun configureArtemis(
-    jobName: String,
-    azureFilesSecretName: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
-    artemisClusterPassSecretKey: String,
-    artemisStoresDirectory: AzureFilesDirectory,
-    workingDirShare: AzureFilesDirectory
-): V1Job {
-    val workingDirMountName = "azureworkingdir"
-    val storesDirMountName = "storesdir"
-    val workingDir = ArtemisConfigParams.ARTEMIS_BROKER_BASE_DIR
-    return setupImageTaskBuilder(jobName, listOf("configure-artemis"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName(workingDirMountName)
-                .withMountPath(workingDir).build(),
-            V1VolumeMountBuilder()
-                .withName(storesDirMountName)
-                .withMountPath(ArtemisConfigParams.ARTEMIS_STORES_DIR).build()
-        )
-        .withEnv(
-            licenceAcceptEnvVar(),
-            keyValueEnvVar("WORKING_DIR", workingDir),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_USER_X500_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_SUBJECT),
-            keyValueEnvVar(
-                ArtemisConfigParams.ARTEMIS_ACCEPTOR_ADDRESS_ENV_VAR_NAME,
-                ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES
-            ),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT.toString()),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_KEYSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PATH),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PATH),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_DATA_DIR_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_DATA_DIR_PATH),
-            secretEnvVar(ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisStorePassSecretKey),
-            secretEnvVar(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisTrustPassSecretKey),
-            secretEnvVar(ArtemisConfigParams.ARTEMIS_CLUSTER_PASSWORD_ENV_VAR_NAME, artemisSecretsName, artemisClusterPassSecretKey)
-        )
-        .endContainer()
-        .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
-            azureFileMount(storesDirMountName, artemisStoresDirectory, azureFilesSecretName, true)
-        )
-        .withRestartPolicy("Never")
-        .withNewSecurityContext()
-        //artemis is 1001
-        .withRunAsUser(1001)
-        .withRunAsGroup(1001)
-        .withFsGroup(1001)
-        .withRunAsNonRoot(true)
-        .endSecurityContext()
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
-}
-
-
-private fun generateTunnelStores(
-    jobName: String,
-    azureFilesSecretName: String,
-    tunnelSecretName: String,
-    tunnelKeyStorePasswordKey: String,
-    tunnelTrustStorePasswordKey: String,
-    tunnelEntryPasswordKey: String,
-    workingDirShare: AzureFilesDirectory
-): V1Job {
-    val workingDirMountName = "azureworkingdir"
-    val workingDir = "/tmp/tunnelGeneration"
-    return setupImageTaskBuilder(jobName, listOf("generate-tunnel-keystores"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName(workingDirMountName)
-                .withMountPath(workingDir).build()
-        )
-        .withImagePullPolicy("IfNotPresent")
-        .withEnv(
-            licenceAcceptEnvVar(),
-            keyValueEnvVar("WORKING_DIR", workingDir),
-            keyValueEnvVar(
-                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
-                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
-            ),
-            keyValueEnvVar(
-                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME,
-                BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_UNIT
-            ),
-            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY_ENV_VAR_NAME, BridgeConfigParams.BRIDGE_CERTIFICATE_LOCALITY),
-            keyValueEnvVar(BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME, BridgeConfigParams.BRIDGE_CERTIFICATE_COUNTRY),
-            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelKeyStorePasswordKey),
-            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelTrustStorePasswordKey),
-            secretEnvVar(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME, tunnelSecretName, tunnelEntryPasswordKey)
-        )
-        .endContainer()
-        .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false)
-        )
-        .withRestartPolicy("Never")
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
-}
-
-
-private fun generateArtemisStoresJob(
-    jobName: String,
-    azureFilesSecretName: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
-    workingDir: AzureFilesDirectory
-): V1Job {
-    val initialRegistrationJob = setupImageTaskBuilder(jobName, listOf("generate-artemis-keystores"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName("azureworkingdir")
-                .withMountPath("/tmp/artemisGeneration").build()
-        )
-        .withImagePullPolicy("IfNotPresent")
-        .withEnv(
-            licenceAcceptEnvVar(),
-            keyValueEnvVar("WORKING_DIR", "/tmp/artemisGeneration"),
-            keyValueEnvVar(
-                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
-                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION
-            ),
-            keyValueEnvVar(
-                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_UNIT_ENV_VAR_NAME,
-                ArtemisConfigParams.ARTEMIS_CERTIFICATE_ORGANISATION_UNIT
-            ),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_CERTIFICATE_LOCALITY_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_LOCALITY),
-            keyValueEnvVar(ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY_ENV_VAR_NAME, ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY),
-            secretEnvVar("ARTEMIS_STORE_PASS", artemisSecretsName, artemisStorePassSecretKey),
-            secretEnvVar("ARTEMIS_TRUST_PASS", artemisSecretsName, artemisTrustPassSecretKey)
-        )
-        .endContainer()
-        .withVolumes(
-            azureFileMount("azureworkingdir", workingDir, azureFilesSecretName, false)
-        )
-        .withRestartPolicy("Never")
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
-    return initialRegistrationJob
-}
-
-
-private fun initialRegistrationJob(
-    jobName: String,
-    azureFilesSecretName: String,
-    nodeConfigSecretsName: String,
-    credentialsSecretName: String,
-    p12FileSecretName: String,
-    azKeyVaultCredentialsFilePasswordKey: String,
-    azKeyVaultCredentialsClientIdKey: String,
-    nodeDatasourceSecretName: String,
-    nodeDatasourceURLSecretKey: String,
-    nodeDatasourceUsernameSecretKey: String,
-    nodeDatasourcePasswordSecretyKey: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
-    nodeStoresSecretName: String,
-    nodeKeyStorePasswordSecretKey: String,
-    nodeTrustStorePasswordSecretKey: String,
-    certificatesShare: AzureFilesDirectory,
-    networkParametersShare: AzureFilesDirectory
-): V1Job {
-    val p12FileFolderMountName = "azurehsmcredentialsdir"
-    val configFilesFolderMountName = "azurecordaconfigdir"
-    val certificatesFolderMountName = "azurecordacertificatesdir"
-    val networkFolderMountName = "networkdir"
-    val initialRegistrationJob = setupImageTaskBuilder(jobName, listOf("perform-registration"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName(p12FileFolderMountName)
-                .withMountPath(AzureKeyVaultConfigParams.CREDENTIALS_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(configFilesFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_CONFIG_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(certificatesFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_CERTIFICATES_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(networkFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR).build()
-        )
-        .withImagePullPolicy("IfNotPresent")
-        .withEnv(
-            keyValueEnvVar("TRUST_ROOT_DOWNLOAD_URL", "http://networkservices:8080/truststore"),
-            keyValueEnvVar("TRUST_ROOT_PATH", NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH),
-            keyValueEnvVar("NETWORK_TRUSTSTORE_PASSWORD", "trustpass"),
-            keyValueEnvVar("BASE_DIR", NodeConfigParams.NODE_BASE_DIR),
-            keyValueEnvVar("CONFIG_FILE_PATH", NodeConfigParams.NODE_CONFIG_PATH),
-            keyValueEnvVar("CERTIFICATE_SAVE_FOLDER", NodeConfigParams.NODE_CERTIFICATES_DIR),
-            keyValueEnvVar("NETWORK_PARAMETERS_SAVE_FOLDER", NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
-                credentialsSecretName,
-                azKeyVaultCredentialsFilePasswordKey
-            ),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
-                credentialsSecretName,
-                azKeyVaultCredentialsClientIdKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_URL_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourceURLSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourceUsernameSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourcePasswordSecretyKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisTrustPassSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisStorePassSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecretName,
-                nodeKeyStorePasswordSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecretName,
-                nodeTrustStorePasswordSecretKey
-            )
-        )
-        .endContainer()
-        .withVolumes(
-            secretVolumeWithAll(p12FileFolderMountName, p12FileSecretName),
-            secretVolumeWithAll(configFilesFolderMountName, nodeConfigSecretsName),
-            azureFileMount(certificatesFolderMountName, certificatesShare, azureFilesSecretName, false),
-            azureFileMount(networkFolderMountName, networkParametersShare, azureFilesSecretName, false)
-        )
-        .withRestartPolicy("Never")
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
-    return initialRegistrationJob
-}
-
-private fun setupImageTaskBuilder(
-    jobName: String,
-    command: List<String>
-): V1PodSpecFluent.ContainersNested<V1PodTemplateSpecFluent.SpecNested<V1JobSpecFluent.TemplateNested<V1JobFluent.SpecNested<V1JobBuilder>>>> {
-    return V1JobBuilder()
-        .withApiVersion("batch/v1")
-        .withKind("Job")
-        .withNewMetadata()
-        .withName(jobName)
-        .endMetadata()
-        .withNewSpec()
-        .withTtlSecondsAfterFinished(100)
-        .withNewTemplate()
-        .withNewSpec()
-        .addNewContainer()
-        .withName(jobName)
-        .withImage("corda/setup:latest")
-        .withImagePullPolicy("IfNotPresent")
-        .withCommand(command)
-}
-
-private fun azureFileMount(
-    mountName: String,
-    share: AzureFilesDirectory,
-    azureFilesSecretName: String,
-    readOnly: Boolean
-): V1Volume {
-    return V1VolumeBuilder()
-        .withName(mountName)
-        .withNewAzureFile()
-        .withShareName(share.fileShare.name)
-        .withSecretName(azureFilesSecretName)
-        .withReadOnly(readOnly)
-        .endAzureFile()
-        .build()
-}
-
-private fun secretVolumeWithAll(
-    mountName: String,
-    secretName: String
-): V1Volume {
-    return V1VolumeBuilder()
-        .withName(mountName)
-        .withNewSecret()
-        .withSecretName(secretName)
-        .endSecret()
-        .build()
-}
-
-private fun secretEnvVar(
-    key: String,
-    secretName: String,
-    secretKey: String
-): V1EnvVar {
-    return V1EnvVarBuilder().withName(key)
-        .withNewValueFrom()
-        .withNewSecretKeyRef()
-        .withName(secretName)
-        .withKey(secretKey)
-        .endSecretKeyRef()
-        .endValueFrom()
-        .build()
-}
-
-private fun keyValueEnvVar(key: String?, value: String?): V1EnvVar {
-    return V1EnvVarBuilder()
-        .withName(key)
-        .withValue(value)
-        .build()
-}
-
-private fun licenceAcceptEnvVar() = keyValueEnvVar("ACCEPT_LICENSE", "Y")
 
 fun String.toEnvVar(): String {
     return "\${$this}"

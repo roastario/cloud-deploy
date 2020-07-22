@@ -1,49 +1,35 @@
 package net.corda.deployments.node.config;
 
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
+
 @SubstitutableSource.SubstitutionTarget(targetConfig = "config/bridge_with_float.conf")
 public final class BridgeConfigParams implements SubstitutableSource {
 
-    private final String artemisAddress;
-    private final int artemisPort;
-    private final String artemisKeyStorePath;
-    private final String artemisKeyStorePassword;
-    private final String artemisTrustStorePath;
-    private final String artemisTrustStorePassword;
-
-    private final String floatAddress;
-    private final int floatPort;
-
-    private final String expectedFloatCertificateSubject;
-    private final String tunnelKeyStorePath;
-    private final String tunnelKeyStorePassword;
-    private final String tunnelTrustStorePath;
-    private final String tunnelTrustStorePassword;
-
-
-    private final String networkParamsPath;
-
-    private final String bridgeKeyStorePath;
-    private final String bridgeKeyStorePassword;
-    private final String bridgeTrustStorePath;
-    private final String bridgeTrustStorePassword;
-
     public static final String BRIDGE_BASE_DIR = "/opt/corda";
-    public static final String EXPECTED_FLOAT_CERTIFICATE_SUBJECT = "CN=float, O=Tunnel, L=LONDON, C=GB";
-    public static final String BRIDGE_TUNNEL_STORES_DIR = "/opt/corda/tunnel/";
-    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME = "bridge.jks";
-    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME;
-    public static final String BRIDGE_TUNNEL_TRUSTSTORE_LOCATION = "/opt/corda/tunnel/tunnel-truststore.jks";
-    public static final String BRIDGE_NETWORK_PARAMETERS_PATH = "/opt/corda/network/network-params";
+    public static final String BRIDGE_CONFIG_DIR = "/etc/corda";
+    public static final String BRIDGE_CONFIG_FILENAME = "bridge.conf";
+    public static final String BRIDGE_CONFIG_PATH = BRIDGE_CONFIG_DIR + BRIDGE_CONFIG_FILENAME;
 
-    public static final String BRIDGE_CERTIFICATES_DIR = "/opt/corda/certificates";
-    public static final String BRIDGE_SSL_KEYSTORE_FILENAME = "bridge.jks";
-    public static final String BRIDGE_SSL_KEYSTORE_PATH = BRIDGE_CERTIFICATES_DIR +"/"+BRIDGE_SSL_KEYSTORE_FILENAME;
-    public static final String BRIDGE_TRUSTSTORE_FILENAME = "truststore.jks";
-    public static final String BRIDGE_TRUSTSTORE_PATH = BRIDGE_CERTIFICATES_DIR +"/"+BRIDGE_TRUSTSTORE_FILENAME;
+    public static final String BRIDGE_TUNNEL_STORES_DIR = BRIDGE_BASE_DIR + "/tunnel";
+    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME = TunnelConfigParams.TUNNEL_BRDIGE_KEYSTORE_FILENAME;
+    public static final String BRIDGE_TUNNEL_TRUSTSTORE_FILENAME = TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME;
+    public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME;
+    public static final String BRIDGE_TUNNEL_TRUSTSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_TRUSTSTORE_FILENAME;
 
     public static final String BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "TUNNEL_SSL_KEYSTORE_PASSWORD";
     public static final String BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = "TUNNEL_TRUSTSTORE_PASSWORD";
     public static final String BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = "TUNNEL_ENTRY_PASSWORD";
+
+    public static final String BRIDGE_CERTIFICATES_DIR = BRIDGE_BASE_DIR + "/certificates";
+    public static final String BRIDGE_SSL_KEYSTORE_FILENAME = "bridge.jks";
+    public static final String BRIDGE_SSL_KEYSTORE_PATH = BRIDGE_CERTIFICATES_DIR + "/" + BRIDGE_SSL_KEYSTORE_FILENAME;
+    public static final String BRIDGE_TRUSTSTORE_FILENAME = "truststore.jks";
+    public static final String BRIDGE_TRUSTSTORE_PATH = BRIDGE_CERTIFICATES_DIR + "/" + BRIDGE_TRUSTSTORE_FILENAME;
+
+    public static final String BRIDGE_NETWORK_PARAMETERS_DIR = BRIDGE_BASE_DIR + "/" + "network";
+    public static final String BRIDGE_NETWORK_PARAMETERS_FILENAME = "network-params";
+    public static final String BRIDGE_NETWORK_PARAMETERS_PATH = BRIDGE_NETWORK_PARAMETERS_DIR + "/" + BRIDGE_NETWORK_PARAMETERS_FILENAME;
 
     public static String BRIDGE_CERTIFICATE_ORGANISATION = "CordaDeployerTunnel";
     public static String BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME = "ORGANISATION";
@@ -54,10 +40,104 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static String BRIDGE_CERTIFICATE_COUNTRY = "GB";
     public static String BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME = "COUNTRY";
     public static String BRIDGE_CERTIFICATE_COMMON_NAME = "Bridge";
-
     public static String BRIDGE_CERTIFICATE_SUBJECT = "CN=" + BRIDGE_CERTIFICATE_COMMON_NAME + ", O=" + BRIDGE_CERTIFICATE_ORGANISATION
             + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
 
+    public static String BRIDGE_ARTEMIS_STORES_DIR = BRIDGE_BASE_DIR + "/artemis";
+    public static String BRIDGE_ARTEMIS_SSL_KEYSTORE_FILENAME = ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME;
+    public static String BRIDGE_ARTEMIS_SSL_KEYSTORE_PATH = BRIDGE_ARTEMIS_STORES_DIR + "/" + BRIDGE_ARTEMIS_SSL_KEYSTORE_FILENAME;
+
+    public static String BRIDGE_ARTEMIS_TRUSTSTORE_FILENAME = ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME;
+    public static String BRIDGE_ARTEMIS_TRUSTSTORE_PATH = BRIDGE_ARTEMIS_STORES_DIR + "/" + BRIDGE_ARTEMIS_TRUSTSTORE_FILENAME;
+
+
+    public static String BRIDGE_ARTEMIS_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_KEYSTORE_PASSWORD";
+    public static String BRIDGE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
+    public static String BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_KEYSTORE_PASSWORD";
+    public static String BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
+
+
+    @NotNull
+    private final String artemisAddress;
+    private final int artemisPort;
+    @NotNull
+    private final String artemisKeyStorePath;
+    @NotNull
+    private final String artemisKeyStorePassword;
+    @NotNull
+    private final String artemisTrustStorePath;
+    @NotNull
+    private final String artemisTrustStorePassword;
+    @NotNull
+    private final String floatAddress;
+    private final int floatPort;
+    @NotNull
+    private final String expectedFloatCertificateSubject;
+    @NotNull
+    private final String tunnelKeyStorePath;
+    @NotNull
+    private final String tunnelKeyStorePassword;
+    @NotNull
+    private final String tunnelTrustStorePath;
+    @NotNull
+    private final String tunnelTrustStorePassword;
+    @NotNull
+    private final String tunnelEntryPassword;
+    @NotNull
+    private final String networkParamsPath;
+    @NotNull
+    private final String bridgeKeyStorePath;
+    @NotNull
+    private final String bridgeKeyStorePassword;
+    @NotNull
+    private final String bridgeTrustStorePath;
+    @NotNull
+    private final String bridgeTrustStorePassword;
+
+
+    public BridgeConfigParams(@NotNull String artemisAddress,
+                              int artemisPort,
+                              @NotNull String artemisKeyStorePath,
+                              @NotNull String artemisKeyStorePassword,
+                              @NotNull String artemisTrustStorePath,
+                              @NotNull String artemisTrustStorePassword,
+                              @NotNull String floatAddress,
+                              int floatPort,
+                              @NotNull String expectedFloatCertificateSubject,
+                              @NotNull String tunnelKeyStorePath,
+                              @NotNull String tunnelKeyStorePassword,
+                              @NotNull String tunnelTrustStorePath,
+                              @NotNull String tunnelTrustStorePassword,
+                              @NotNull String networkParamsPath,
+                              @NotNull String bridgeKeyStorePath,
+                              @NotNull String bridgeKeyStorePassword,
+                              @NotNull String bridgeTrustStorePath,
+                              @NotNull String bridgeTrustStorePassword,
+                              @NotNull String tunnelEntryPassword) {
+        this.artemisAddress = artemisAddress;
+        this.artemisPort = artemisPort;
+        this.artemisKeyStorePath = artemisKeyStorePath;
+        this.artemisKeyStorePassword = artemisKeyStorePassword;
+        this.artemisTrustStorePath = artemisTrustStorePath;
+        this.artemisTrustStorePassword = artemisTrustStorePassword;
+        this.floatAddress = floatAddress;
+        this.floatPort = floatPort;
+        this.expectedFloatCertificateSubject = expectedFloatCertificateSubject;
+        this.tunnelKeyStorePath = tunnelKeyStorePath;
+        this.tunnelKeyStorePassword = tunnelKeyStorePassword;
+        this.tunnelTrustStorePath = tunnelTrustStorePath;
+        this.tunnelTrustStorePassword = tunnelTrustStorePassword;
+        this.networkParamsPath = networkParamsPath;
+        this.bridgeKeyStorePath = bridgeKeyStorePath;
+        this.bridgeKeyStorePassword = bridgeKeyStorePassword;
+        this.bridgeTrustStorePath = bridgeTrustStorePath;
+        this.bridgeTrustStorePassword = bridgeTrustStorePassword;
+        this.tunnelEntryPassword = tunnelEntryPassword;
+    }
+
+    public static BridgeConfigParamsBuilder builder() {
+        return new BridgeConfigParamsBuilder();
+    }
 
     public String getArtemisAddress() {
         return artemisAddress;
@@ -131,34 +211,8 @@ public final class BridgeConfigParams implements SubstitutableSource {
         return bridgeTrustStorePassword;
     }
 
-    public BridgeConfigParamsBuilder builder() {
-        return new BridgeConfigParamsBuilder();
-    }
-
-    public BridgeConfigParams(String artemisAddress, int artemisPort, String artemisKeyStorePath, String artemisKeyStorePassword,
-                              String artemisTrustStorePath, String artemisTrustStorePassword, String floatAddress, int floatPort,
-                              String expectedFloatCertificateSubject, String tunnelKeyStorePath, String tunnelKeyStorePassword,
-                              String tunnelTrustStorePath, String tunnelTrustStorePassword, String networkParamsPath,
-                              String bridgeKeyStorePath, String bridgeKeyStorePassword, String bridgeTrustStorePath,
-                              String bridgeTrustStorePassword) {
-        this.artemisAddress = artemisAddress;
-        this.artemisPort = artemisPort;
-        this.artemisKeyStorePath = artemisKeyStorePath;
-        this.artemisKeyStorePassword = artemisKeyStorePassword;
-        this.artemisTrustStorePath = artemisTrustStorePath;
-        this.artemisTrustStorePassword = artemisTrustStorePassword;
-        this.floatAddress = floatAddress;
-        this.floatPort = floatPort;
-        this.expectedFloatCertificateSubject = expectedFloatCertificateSubject;
-        this.tunnelKeyStorePath = tunnelKeyStorePath;
-        this.tunnelKeyStorePassword = tunnelKeyStorePassword;
-        this.tunnelTrustStorePath = tunnelTrustStorePath;
-        this.tunnelTrustStorePassword = tunnelTrustStorePassword;
-        this.networkParamsPath = networkParamsPath;
-        this.bridgeKeyStorePath = bridgeKeyStorePath;
-        this.bridgeKeyStorePassword = bridgeKeyStorePassword;
-        this.bridgeTrustStorePath = bridgeTrustStorePath;
-        this.bridgeTrustStorePassword = bridgeTrustStorePassword;
+    public String getTunnelEntryPassword() {
+        return tunnelEntryPassword;
     }
 
     public static final class BridgeConfigParamsBuilder {
@@ -180,9 +234,11 @@ public final class BridgeConfigParams implements SubstitutableSource {
         private String bridgeKeyStorePassword;
         private String bridgeTrustStorePath;
         private String bridgeTrustStorePassword;
+        private String bridgeTunnelEntryPassword;
 
         private BridgeConfigParamsBuilder() {
         }
+
 
         public BridgeConfigParamsBuilder withArtemisAddress(String artemisAddress) {
             this.artemisAddress = artemisAddress;
@@ -274,11 +330,15 @@ public final class BridgeConfigParams implements SubstitutableSource {
             return this;
         }
 
+        public BridgeConfigParamsBuilder withTunnelEntryPassword(String bridgeTunnelEntryPassword) {
+            this.bridgeTunnelEntryPassword = bridgeTunnelEntryPassword;
+            return this;
+        }
+
+        @NotNull
+        @Contract(value = " -> new", pure = true)
         public BridgeConfigParams build() {
-            return new BridgeConfigParams(artemisAddress, artemisPort, artemisKeyStorePath, artemisKeyStorePassword, artemisTrustStorePath,
-                    artemisTrustStorePassword, floatAddress, floatPort, expectedFloatCertificateSubject, tunnelKeyStorePath,
-                    tunnelKeyStorePassword, tunnelTrustStorePath, tunnelTrustStorePassword, networkParamsPath, bridgeKeyStorePath,
-                    bridgeKeyStorePassword, bridgeTrustStorePath, bridgeTrustStorePassword);
+            return new BridgeConfigParams(artemisAddress, artemisPort, artemisKeyStorePath, artemisKeyStorePassword, artemisTrustStorePath, artemisTrustStorePassword, floatAddress, floatPort, expectedFloatCertificateSubject, tunnelKeyStorePath, tunnelKeyStorePassword, tunnelTrustStorePath, tunnelTrustStorePassword, networkParamsPath, bridgeKeyStorePath, bridgeKeyStorePassword, bridgeTrustStorePath, bridgeTrustStorePassword, bridgeTunnelEntryPassword);
         }
     }
 }

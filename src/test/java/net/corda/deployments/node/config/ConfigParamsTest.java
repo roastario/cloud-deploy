@@ -2,6 +2,8 @@ package net.corda.deployments.node.config;
 
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassInfoList;
+import kotlin.Lazy;
+import kotlin.LazyKt;
 import kotlin.text.Charsets;
 import org.apache.commons.io.IOUtils;
 import org.junit.Assert;
@@ -16,15 +18,15 @@ import java.util.regex.Pattern;
 
 public class ConfigParamsTest {
 
-    ClassGraph classGraph = new ClassGraph().enableClassInfo().enableAnnotationInfo().acceptPackages("net.corda");
-    ClassInfoList classesImplementing = classGraph
-            .scan()
-            .getClassesImplementing(SubstitutableSource.class.getCanonicalName());
+    private static ClassGraph classGraph = new ClassGraph().enableClassInfo().enableAnnotationInfo().acceptPackages("net.corda");
+    private static  Lazy<ClassInfoList> classesImplementing = LazyKt.lazy(() ->
+            classGraph.scan().getClassesImplementing(SubstitutableSource.class.getCanonicalName())
+    );
 
 
     @Test
     public void allSubsitutionSourcesShouldBeAnnotated() {
-        classesImplementing.forEach(ci -> {
+        classesImplementing.getValue().forEach(ci -> {
             SubstitutableSource.SubstitutionTarget annotation = ci.loadClass().getAnnotation(SubstitutableSource.SubstitutionTarget.class);
             if (annotation == null) {
                 Assert.fail("class: " + ci.getName() + " implements: " + SubstitutableSource.class
@@ -37,15 +39,16 @@ public class ConfigParamsTest {
 
     @Test
     public void configFilesAndConfigPojosMustBeInSync() {
-        classesImplementing.forEach(ci -> {
+        classesImplementing.getValue().forEach(ci -> {
             Class<?> sourceClass = ci.loadClass();
             String targetConfig = sourceClass.getAnnotation(SubstitutableSource.SubstitutionTarget.class).targetConfig();
             InputStream configAsStream = this.getClass().getClassLoader().getResourceAsStream(targetConfig);
             try {
+                assert configAsStream != null;
                 String configAsString = IOUtils.toString(configAsStream, Charsets.UTF_8);
                 SubstitutableSource o = (SubstitutableSource) getUnsafe().allocateInstance(sourceClass);
                 Map<String, String> substitutionMap = o.toSubstitutionMap();
-                Pattern pattern = Pattern.compile("#\\{([a-zA-Z0-9]+)\\}");
+                Pattern pattern = Pattern.compile("#\\{([a-zA-Z0-9]+)}");
                 Matcher matcher = pattern.matcher(configAsString);
                 List<String> replacements = new LinkedList<>();
                 while (matcher.find()) {

@@ -2,6 +2,8 @@ package net.corda.deployments.node.config;
 
 import org.jetbrains.annotations.NotNull;
 
+import static net.corda.deployments.node.config.BridgeConfigParams.*;
+
 @SubstitutableSource.SubstitutionTarget(targetConfig = "config/float_with_bridge.conf")
 public final class FloatConfigParams implements SubstitutableSource {
     @NotNull
@@ -20,29 +22,36 @@ public final class FloatConfigParams implements SubstitutableSource {
 
     @NotNull
     private final String networkParametersPath;
+    private final String tunnelEntryPassword;
+
 
     @NotNull
     public static final String FLOAT_BASE_DIR = "/opt/corda";
     public static final int FLOAT_INTERNAL_PORT = 10000;
     public static final int FLOAT_EXTERNAL_PORT = 10200;
-    @NotNull
-    public static final String FLOAT_TUNNEL_SSL_KEYSTORE_LOCATION = "/opt/corda/tunnel/float.jks";
-    @NotNull
-    public static final String FLOAT_TUNNEL_TRUSTSTORE_LOCATION = "/opt/corda/tunnel/tunnel-truststore.jks";
-    @NotNull
-    public static final String EXPECTED_BRIDGE_CERTIFICATE_SUBJECT = "CN=bridge, O=Tunnel, L=LONDON, C=GB";
-    @NotNull
-    public static final String FLOAT_NETWORK_PARAMETERS_PATH = "/opt/corda/network/network-params";
+    public static final String FLOAT_CERTIFICATE_COMMON_NAME = "Float";
+    public static String FLOAT_CERTIFICATE_SUBJECT = "CN=" + FLOAT_CERTIFICATE_COMMON_NAME + ", O=" + BRIDGE_CERTIFICATE_ORGANISATION
+            + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
 
-    public static final String FLOAT_CERTIFICATES_DIR = FLOAT_BASE_DIR + "/certificates";
-    public static final String FLOAT_SSL_KEYSTORE_FILENAME = "float.jks";
-    public static final String FLOAT_SSL_KEYSTORE_PATH = FLOAT_CERTIFICATES_DIR + "/" + FLOAT_SSL_KEYSTORE_FILENAME;
-    public static final String FLOAT_TRUSTSTORE_FILENAME = "truststore.jks";
-    public static final String FLOAT_TRUSTSTORE_PATH = FLOAT_CERTIFICATES_DIR + "/" + FLOAT_TRUSTSTORE_FILENAME;
+    public static final String FLOAT_NETWORK_DIR = FLOAT_BASE_DIR + "/network";
+    public static final String FLOAT_NETWORK_PARAMS_FILENAME = "network-params";
+    public static final String FLOAT_NETWORK_PARAMETERS_PATH = FLOAT_NETWORK_DIR + "/" + FLOAT_NETWORK_PARAMS_FILENAME;
+    public static final String FLOAT_TUNNEL_STORES_DIR = FLOAT_BASE_DIR + "/certificates";
+    public static final String FLOAT_TUNNEL_SSL_KEYSTORE_FILENAME = "float.jks";
+    public static final String FLOAT_TUNNEL_SSL_KEYSTORE_PATH = FLOAT_TUNNEL_STORES_DIR + "/" + FLOAT_TUNNEL_SSL_KEYSTORE_FILENAME;
+    public static final String FLOAT_TUNNEL_TRUSTSTORE_FILENAME = "tunnel-truststore.jks";
+    public static final String FLOAT_TUNNEL_TRUSTSTORE_PATH = FLOAT_TUNNEL_STORES_DIR + "/" + FLOAT_TUNNEL_TRUSTSTORE_FILENAME;
 
-    public static final String FLOAT_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME;
-    public static final String FLOAT_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME;
+    public static final String FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME;
+    public static final String FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME;
     public static final String FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME;
+
+    public static final String FLOAT_CONFIG_DIR = "/etc/corda";
+    public static final String FLOAT_CONFIG_FILENAME = "float.conf";
+    public static final String FLOAT_CONFIG_PATH = FLOAT_CONFIG_DIR +"/" + FLOAT_CONFIG_FILENAME;
+
+    public static final String ALL_LOCAL_ADDRESSES = ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES;
+
 
     public FloatConfigParams(@NotNull String externalBindAddress,
                              @NotNull Integer externalPort,
@@ -53,6 +62,7 @@ public final class FloatConfigParams implements SubstitutableSource {
                              @NotNull String tunnelTrustStorePassword,
                              @NotNull String tunnelKeystorePath,
                              @NotNull String tunnelTrustStorePath,
+                             @NotNull String tunnelEntryPassword,
                              @NotNull String networkParametersPath) {
         this.externalBindAddress = externalBindAddress;
         this.externalPort = externalPort;
@@ -63,6 +73,7 @@ public final class FloatConfigParams implements SubstitutableSource {
         this.tunnelTrustStorePassword = tunnelTrustStorePassword;
         this.tunnelKeystorePath = tunnelKeystorePath;
         this.tunnelTrustStorePath = tunnelTrustStorePath;
+        this.tunnelEntryPassword = tunnelEntryPassword;
         this.networkParametersPath = networkParametersPath;
     }
 
@@ -115,6 +126,10 @@ public final class FloatConfigParams implements SubstitutableSource {
         return networkParametersPath;
     }
 
+    public String getTunnelEntryPassword() {
+        return tunnelEntryPassword;
+    }
+
     public static final class FloatConfigParamsBuilder {
         private String baseDir;
         private String externalBindAddress;
@@ -127,6 +142,7 @@ public final class FloatConfigParams implements SubstitutableSource {
         private String tunnelKeystorePath;
         private String tunnelTrustStorePath;
         private String networkParametersPath;
+        private String entryPassword;
 
         private FloatConfigParamsBuilder() {
         }
@@ -189,7 +205,13 @@ public final class FloatConfigParams implements SubstitutableSource {
         public FloatConfigParams build() {
             return new FloatConfigParams(externalBindAddress, externalPort, internalBindAddress, internalPort,
                     expectedBridgeCertificateSubject, tunnelKeyStorePassword, tunnelTrustStorePassword, tunnelKeystorePath,
-                    tunnelTrustStorePath, networkParametersPath);
+                    tunnelTrustStorePath, entryPassword, networkParametersPath);
+        }
+
+        @NotNull
+        public FloatConfigParamsBuilder withTunnelStoresEntryPassword(@NotNull String entryPassword) {
+            this.entryPassword = entryPassword;
+            return this;
         }
     }
 }

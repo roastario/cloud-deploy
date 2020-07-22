@@ -64,6 +64,7 @@ dependencies {
     implementation group: 'org.apache.commons', name: 'commons-text', version: '1.8'
     testCompile group: 'junit', name: 'junit', version: '4.12'
 
+    implementation 'com.azure:azure-storage-file-share:12.5.0'
 
     firewallComponents group: "com.r3.corda", name: 'corda-firewall', version: '4.5'
     registrationComponents group: 'com.r3.corda', name: 'corda-tools-ha-utilities', version: '4.5'

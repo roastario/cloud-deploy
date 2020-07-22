@@ -1,6 +1,7 @@
 package net.corda.deployments.node.config;
 
 import net.corda.deployments.node.config.SubstitutableSource.SubstitutionTarget;
+import org.jetbrains.annotations.NotNull;
 
 @SubstitutionTarget(targetConfig = "config/node_with_external_artemis.conf")
 public class NodeConfigParams implements SubstitutableSource {
@@ -65,6 +66,8 @@ public class NodeConfigParams implements SubstitutableSource {
     public static final String NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME = "DATASOURCE_PASSWORD";
 
     public static final String NODE_NETWORK_PARAMETERS_SETUP_DIR = "/tmp/network";
+    @NotNull
+    public static final String NETWORK_PARAMETERS_FILENAME = "network-parameters";
 
 
     public NodeConfigParams(String x500Name,
