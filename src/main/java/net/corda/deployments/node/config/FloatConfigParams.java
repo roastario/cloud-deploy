@@ -34,7 +34,7 @@ public final class FloatConfigParams implements SubstitutableSource {
             + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
 
     public static final String FLOAT_NETWORK_DIR = FLOAT_BASE_DIR + "/network";
-    public static final String FLOAT_NETWORK_PARAMS_FILENAME = "network-params";
+    public static final String FLOAT_NETWORK_PARAMS_FILENAME = "network-parameters";
     public static final String FLOAT_NETWORK_PARAMETERS_PATH = FLOAT_NETWORK_DIR + "/" + FLOAT_NETWORK_PARAMS_FILENAME;
     public static final String FLOAT_TUNNEL_STORES_DIR = FLOAT_BASE_DIR + "/certificates";
     public static final String FLOAT_TUNNEL_SSL_KEYSTORE_FILENAME = "float.jks";

@@ -8,10 +8,7 @@ import net.corda.deployments.node.config.ArtemisConfigParams
 fun configureArtemis(
     jobName: String,
     azureFilesSecretName: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
-    artemisClusterPassSecretKey: String,
+    artemisSecrets: ArtemisSecrets,
     artemisStoresDirectory: AzureFilesDirectory,
     workingDirShare: AzureFilesDirectory
 ): V1Job {
@@ -56,18 +53,18 @@ fun configureArtemis(
             ),
             secretEnvVar(
                 ArtemisConfigParams.ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisStorePassSecretKey
+                artemisSecrets.secretName,
+                artemisSecrets.keyStorePasswordKey
             ),
             secretEnvVar(
                 ArtemisConfigParams.ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisTrustPassSecretKey
+                artemisSecrets.secretName,
+                artemisSecrets.trustStorePasswordKey
             ),
             secretEnvVar(
                 ArtemisConfigParams.ARTEMIS_CLUSTER_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisClusterPassSecretKey
+                artemisSecrets.secretName,
+                artemisSecrets.clusterPasswordKey
             )
         )
         .endContainer()

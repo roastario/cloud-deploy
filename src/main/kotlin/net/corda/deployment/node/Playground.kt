@@ -7,8 +7,6 @@ import com.microsoft.azure.management.compute.Disk
 import com.microsoft.azure.management.compute.DiskSkuTypes
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.rest.LogLevel
-import io.kubernetes.client.custom.Quantity
-import io.kubernetes.client.openapi.models.*
 import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.config.ConfigGenerators
@@ -18,7 +16,6 @@ import net.corda.deployment.node.kubernetes.SecretCreator
 import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
-import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.uploadFromByteArray
 import net.corda.deployments.node.config.*
 import org.apache.commons.lang3.RandomStringUtils
@@ -30,6 +27,7 @@ import kotlin.system.exitProcess
 
 @ExperimentalUnsignedTypes
 fun main(args: Array<String>) {
+    val defaultClientSource = { ClientBuilder.defaultClient() }
 
     val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())
     val namespace = "testingzone"
@@ -47,8 +45,6 @@ fun main(args: Array<String>) {
     val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
 
 
-    val defaultClientSource = { ClientBuilder.defaultClient() }
-
     val azureFileShareCreator = AzureFileShareCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
 
 
@@ -65,43 +61,45 @@ fun main(args: Array<String>) {
     )
 
     val dbParams = H2_DB
-    val nodeTrustStorePassword = RandomStringUtils.randomAlphanumeric(20)
     val artemisStoresShare = azureFileShareCreator.createDirectoryFor("artemis-stores")
 
-    val artemisSecretsName = "artemis-${randSuffix}"
-    val artemisStorePassSecretKey = "artemisstorepass"
-    val artemisTrustPassSecretKey = "artemistrustpass"
-    val artemisClusterPassSecretKey = "artemisclusterpass";
-    val artemisSecret = SecretCreator.createStringSecret(
-        artemisSecretsName,
-        listOf(
-            artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-            artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-            artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
-        ).toMap()
-        , namespace, defaultClientSource
-    )
-    val generateArtemisStoresJobName = "gen-artemis-stores-${randSuffix}"
+    val artemisSetup = ArtemisSetup(namespace, randSuffix)
+    val artemisSecrets = artemisSetup.generateArtemisSecrets(defaultClientSource)
+    val firewallSetup = FirewallSetup(namespace, randSuffix)
+    val firewallTunnelSecrets = firewallSetup.generateFirewallTunnelSecrets(defaultClientSource)
 
+    val generateArtemisStoresJobName = "gen-artemis-stores-${randSuffix}"
+    val artemisInstalledBrokerShare = azureFileShareCreator.createDirectoryFor("artemis-config")
+    val artemisDeployment =
+        createArtemisDeployment(namespace, azureFilesSecretName, artemisInstalledBrokerShare, artemisStoresShare, null, randSuffix)
+    val artemisService = createArtemisService(artemisDeployment)
+
+    val nodeX500 = "O=BigCorporation,L=New York,C=US"
+    val nodeEmail = "stefano.franz@r3.com"
+    val nodeP2PAddress = "localhost"
+    val doormanURL = "http://networkservices:8080"
+    val networkMapURL = "http://networkservices:8080"
+    val rpcUsername = "u"
+    val rpcPassword = "p"
     val nodeConfigParams = NodeConfigParams.builder()
-        .withX500Name("O=BigCorporation,L=New York,C=US")
-        .withEmailAddress("stefano.franz@r3.com")
+        .withX500Name(nodeX500)
+        .withEmailAddress(nodeEmail)
         .withNodeSSLKeystorePassword(NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
         .withNodeTrustStorePassword(NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withP2pAddress("localhost")
-        .withP2pPort(1234)
-        .withArtemisServerAddress("localhost")
-        .withArtemisServerPort(1234)
+        .withP2pAddress(nodeP2PAddress)
+        .withP2pPort(NodeConfigParams.NODE_P2P_PORT)
+        .withArtemisServerAddress(artemisService.metadata?.name)
+        .withArtemisServerPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
         .withArtemisSSLKeyStorePath(NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PATH)
         .withArtemisSSLKeyStorePass(NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
         .withArtemisTrustStorePath(NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PATH)
         .withArtemisTrustStorePass(NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withRpcPort(1234)
-        .withRpcAdminPort(1234)
-        .withDoormanURL("http://networkservices:8080")
-        .withNetworkMapURL("http://networkservices:8080")
-        .withRpcUsername("u")
-        .withRpcPassword("p")
+        .withRpcPort(NodeConfigParams.NODE_RPC_PORT)
+        .withRpcAdminPort(NodeConfigParams.NODE_RPC_ADMIN_PORT)
+        .withDoormanURL(doormanURL)
+        .withNetworkMapURL(networkMapURL)
+        .withRpcUsername(rpcUsername)
+        .withRpcPassword(rpcPassword)
         .withDataSourceClassName(dbParams.type.dataSourceClass)
         .withDataSourceURL(dbParams.jdbcURL)
         .withDataSourceUsername(NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME.toEnvVar())
@@ -154,13 +152,13 @@ fun main(args: Array<String>) {
 
     val nodeStoresSecretName = "node-keystores-secrets-$randSuffix"
     val nodeKeyStorePasswordSecretKey = "node-ssl-keystore-password"
-    val nodeTrustStorePasswordSecretKey = "node-truststore-password"
+    val sharedTrustStorePasswordSecretKey = "shared-truststore-password"
 
     val nodeStoresSecrets = SecretCreator.createStringSecret(
         nodeStoresSecretName,
         listOf(
             nodeKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20),
-            nodeTrustStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
+            sharedTrustStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
         ).toMap(),
         namespace, defaultClientSource
     )
@@ -201,40 +199,23 @@ fun main(args: Array<String>) {
         nodeDatasourceURLSecretKey,
         nodeDatasourceUsernameSecretKey,
         nodeDatasourcePasswordSecretyKey,
-        artemisSecretsName,
-        artemisStorePassSecretKey,
-        artemisTrustPassSecretKey,
+        artemisSecrets,
         nodeStoresSecretName,
         nodeKeyStorePasswordSecretKey,
-        nodeTrustStorePasswordSecretKey,
+        sharedTrustStorePasswordSecretKey,
         initialRegistrationResultShare,
         networkParametersFromInitialRegistrationShare
     )
 
-
     val tunnelStoresShare = azureFileShareCreator.createDirectoryFor("tunnel-stores")
-    val tunnelSecretName = "tunnel-store-secrets-$randSuffix"
-    val tunnelEntryPasswordKey = "tunnelentrypassword"
-    val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
-    val tunnelTrustStorePasswordKey = "tunneltruststorepassword";
-    val tunnelSecret = SecretCreator.createStringSecret(
-        tunnelSecretName,
-        listOf(
-            tunnelEntryPasswordKey to RandomStringUtils.randomAlphanumeric(32),
-            tunnelKeyStorePasswordKey to RandomStringUtils.randomAlphanumeric(32),
-            tunnelTrustStorePasswordKey to RandomStringUtils.randomAlphanumeric(32)
-        ).toMap()
-        , namespace, defaultClientSource
-    )
+
 
     val generateTunnelStoresJobName = "gen-tunnel-stores-${randSuffix}"
 
     val generateArtemisStoresJob = generateArtemisStoresJob(
         generateArtemisStoresJobName,
+        artemisSecrets,
         azureFilesSecretName,
-        artemisSecretsName,
-        artemisStorePassSecretKey,
-        artemisTrustPassSecretKey,
         artemisStoresShare
     )
 
@@ -248,15 +229,12 @@ fun main(args: Array<String>) {
         tunnelStoresShare
     )
 
-    val artemisInstalledBrokerShare = azureFileShareCreator.createDirectoryFor("artemis-config")
     val configureArtemisJobName = "configure-artemis-$randSuffix"
+
     val configureArtemisJob = configureArtemis(
         configureArtemisJobName,
         azureFilesSecretName,
-        artemisSecretsName,
-        artemisStorePassSecretKey,
-        artemisTrustPassSecretKey,
-        artemisClusterPassSecretKey,
+        artemisSecrets,
         artemisStoresShare,
         artemisInstalledBrokerShare
     )
@@ -265,13 +243,11 @@ fun main(args: Array<String>) {
     val bridgeCertificatesShare = azureFileShareCreator.createDirectoryFor("bridge-certs")
     val bridgeCertificatesSecretName = "bridge-certs-secerts-$randSuffix"
     val bridgeSSLKeyStorePasswordSecretKey = "bridgesslpassword"
-    val bridgeTruststorePasswordSecretKey = "bridgetruststorepassword"
 
     val bridgeSSLSecret = SecretCreator.createStringSecret(
         bridgeCertificatesSecretName,
         listOf(
-            bridgeSSLKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20),
-            bridgeTruststorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
+            bridgeSSLKeyStorePasswordSecretKey to RandomStringUtils.randomAlphanumeric(20)
         ).toMap(),
         namespace, defaultClientSource
     )
@@ -286,6 +262,8 @@ fun main(args: Array<String>) {
         initialRegistrationResultShare,
         bridgeCertificatesShare
     )
+
+
 
     simpleApply.create(initialRegistrationJob, namespace)
     waitForJob(namespace, initialRegistrationJob, defaultClientSource)
@@ -307,30 +285,45 @@ fun main(args: Array<String>) {
     waitForJob(namespace, importNodeKeyStoreToBridgeJob, defaultClientSource)
     dumpLogsForJob(defaultClientSource, importNodeKeyStoreToBridgeJob)
 
-    val artemisDeployment =
-        createArtemisDeployment(namespace, azureFilesSecretName, artemisInstalledBrokerShare, artemisStoresShare, null, randSuffix)
+
+    val artemisAddress = artemisService.metadata?.name
+    val floatAddress = "floatAddress"
+    val bridgeConfig = BridgeConfigParams.builder()
+        .withArtemisAddress(artemisAddress)
+        .withArtemisPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
+        .withArtemisKeyStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_SSL_KEYSTORE_PATH)
+        .withArtemisKeyStorePassword(BridgeConfigParams.BRIDGE_ARTEMIS_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withArtemisTrustStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PATH)
+        .withArtemisTrustStorePassword(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withFloatAddress(floatAddress)
+        .withFloatPort(FloatConfigParams.FLOAT_INTERNAL_PORT)
+        .withExpectedFloatCertificateSubject(FloatConfigParams.FLOAT_CERTIFICATE_SUBJECT)
+        .withTunnelKeyStorePath(BridgeConfigParams.BRIDGE_TUNNEL_SSL_KEYSTORE_PATH)
+        .withTunnelKeyStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelTrustStorePath(BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PATH)
+        .withTunnelTrustStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withTunnelEntryPassword(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withNetworkParamsPath(BridgeConfigParams.BRIDGE_NETWORK_PARAMETERS_PATH)
+        .withBridgeKeyStorePath(BridgeConfigParams.BRIDGE_SSL_KEYSTORE_PATH)
+        .withBridgeKeyStorePassword(BridgeConfigParams.BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .withBridgeTrustStorePath(BridgeConfigParams.BRIDGE_TRUSTSTORE_PATH)
+        .withBridgeTrustStorePassword(BridgeConfigParams.BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
+        .build()
 
     println(Yaml.dump(artemisDeployment))
-    simpleApply.create(artemisDeployment, namespace, defaultClientSource())
+    simpleApply.apply(listOf(artemisDeployment, artemisService), namespace, defaultClientSource())
 
     val floatTunnelShare = azureFileShareCreator.createDirectoryFor("float-tunnel")
-
-
     val generatedTunnelTrustStoreFileReference =
         tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
-
     val generatedFloatTunnelKeyStoreFileReference =
         tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
-
     val generatedBridgeTunnelKeyStoreFileReference =
         tunnelStoresShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_BRDIGE_KEYSTORE_FILENAME)
-
     val floatTunnelTrustStoreFileReference =
         floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
-
     val floatTunnelKeyStoreFileReference =
         floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
-
     floatTunnelTrustStoreFileReference.createFrom(generatedTunnelTrustStoreFileReference)
     floatTunnelKeyStoreFileReference.createFrom(generatedFloatTunnelKeyStoreFileReference)
 
@@ -378,32 +371,9 @@ fun main(args: Array<String>) {
     println(Yaml.dump(floatDeployment))
     simpleApply.create(floatDeployment, namespace, defaultClientSource())
 
-    val artemisAddress = "artemisAddress"
-    val floatAddress = "floatAddress"
-    val bridgeConfig = BridgeConfigParams.builder()
-        .withArtemisAddress(artemisAddress)
-        .withArtemisPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
-        .withArtemisKeyStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_SSL_KEYSTORE_PATH)
-        .withArtemisKeyStorePassword(BridgeConfigParams.BRIDGE_ARTEMIS_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withArtemisTrustStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PATH)
-        .withArtemisTrustStorePath(BridgeConfigParams.BRIDGE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withFloatAddress(floatAddress)
-        .withFloatPort(FloatConfigParams.FLOAT_INTERNAL_PORT)
-        .withExpectedFloatCertificateSubject(FloatConfigParams.FLOAT_CERTIFICATE_SUBJECT)
-        .withTunnelKeyStorePath(BridgeConfigParams.BRIDGE_TUNNEL_SSL_KEYSTORE_PATH)
-        .withTunnelKeyStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withTunnelTrustStorePath(BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PATH)
-        .withTunnelTrustStorePassword(BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withTunnelEntryPassword(BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withNetworkParamsPath(BridgeConfigParams.BRIDGE_NETWORK_PARAMETERS_PATH)
-        .withBridgeKeyStorePath(BridgeConfigParams.BRIDGE_SSL_KEYSTORE_PATH)
-        .withBridgeKeyStorePassword(BridgeConfigParams.BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .withBridgeTrustStorePath(BridgeConfigParams.BRIDGE_TRUSTSTORE_PATH)
-        .withBridgeTrustStorePassword(BridgeConfigParams.BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
-        .build()
-
     val bridgeConfigShare = azureFileShareCreator.createDirectoryFor("bridge-config")
-    val bridgeConfigFileReference = bridgeConfigShare.legacyClient.rootDirectoryReference.getFileReference(BridgeConfigParams.BRIDGE_CONFIG_FILENAME)
+    val bridgeConfigFileReference =
+        bridgeConfigShare.legacyClient.rootDirectoryReference.getFileReference(BridgeConfigParams.BRIDGE_CONFIG_FILENAME)
     bridgeConfigFileReference.uploadFromByteArray(ConfigGenerators.generateConfigFromParams(bridgeConfig).toByteArray(Charsets.UTF_8))
 
     val bridgeNetworkParamsShare = azureFileShareCreator.createDirectoryFor("bridge-network-params")
@@ -426,13 +396,42 @@ fun main(args: Array<String>) {
     val bridgeArtemisTrustStoreFileReference =
         bridgeArtemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
 
-    val generatedArtemisBridgeKeyStoreFileReference = artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
-    val generatedArtemisTrustStoreFileReference = artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
+    val generatedArtemisBridgeKeyStoreFileReference =
+        artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
+    val generatedArtemisTrustStoreFileReference =
+        artemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
 
     bridgeArtemisKeyStoreFileReference.createFrom(generatedArtemisBridgeKeyStoreFileReference)
     bridgeArtemisTrustStoreFileReference.createFrom(generatedArtemisTrustStoreFileReference)
 
+    val bridgeTrustStoreFileReference =
+        bridgeCertificatesShare.modernClient.rootDirectoryClient.getFileClient(BridgeConfigParams.BRIDGE_TRUSTSTORE_FILENAME)
+    val trustStoreFromInitialRegistration =
+        initialRegistrationResultShare.modernClient.rootDirectoryClient.getFileClient(NodeConfigParams.NODE_TRUSTSTORE_FILENAME)
+    bridgeTrustStoreFileReference.createFrom(trustStoreFromInitialRegistration)
 
+    val bridgeDeployment = createBridgeDeployment(
+        namespace,
+        randSuffix,
+        bridgeConfigShare,
+        bridgeTunnelShare,
+        bridgeArtemisStoresShare,
+        bridgeCertificatesShare,
+        networkParametersFromInitialRegistrationShare,
+        tunnelSecretName,
+        tunnelKeyStorePasswordKey,
+        tunnelTrustStorePasswordKey,
+        tunnelEntryPasswordKey,
+        artemisSecrets,
+        bridgeCertificatesSecretName,
+        bridgeSSLKeyStorePasswordSecretKey,
+        nodeStoresSecretName,
+        sharedTrustStorePasswordSecretKey,
+        azureFilesSecretName
+    )
+
+    println(Yaml.dump(bridgeDeployment))
+    simpleApply.create(bridgeDeployment, namespace, defaultClientSource())
 
     exitProcess(0)
 }
@@ -441,6 +440,9 @@ fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Dura
     val sizeToCopy = source.properties.contentLength
     if (!this.exists()) {
         this.create(sizeToCopy)
+    } else {
+        this.delete()
+        this.create(sizeToCopy)
     }
     val poller = this.beginCopy(
         source.fileUrl,
@@ -448,116 +450,6 @@ fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Dura
         null
     )
     poller.waitForCompletion(timeout)
-}
-
-
-fun createFloatDeployment(
-    namespace: String,
-    runId: String,
-    floatConfigShare: AzureFilesDirectory,
-    tunnelStoresShare: AzureFilesDirectory,
-    networkParametersShare: AzureFilesDirectory,
-    tunnelStoresSecretName: String,
-    tunnelSSLKeysStorePasswordSecretKey: String,
-    tunnelTrustStorePasswordSecretKey: String,
-    tunnelEntryPasswordKey: String,
-    azureFilesSecretName: String
-): V1Deployment {
-    val configDirMountName = "config-dir"
-    val tunnelStoresMountName = "tunnel-stores-dir"
-    val networkParametersMountName = "network-parameters-dir"
-    return V1DeploymentBuilder()
-        .withKind("Deployment")
-        .withApiVersion("apps/v1")
-        .withNewMetadata()
-        .withNamespace(namespace)
-        .withName("float-${runId}")
-        .withLabels(listOf("dmz" to "true").toMap())
-        .endMetadata()
-        .withNewSpec()
-        .withNewSelector()
-        .withMatchLabels(listOf("run" to "float-$runId").toMap())
-        .endSelector()
-        .withReplicas(1)
-        .withNewTemplate()
-        .withNewMetadata()
-        .withLabels(listOf("run" to "float-$runId").toMap())
-        .endMetadata()
-        .withNewSpec()
-        .addNewContainer()
-        .withName("float-$runId")
-        .withImage("corda/firewall:latest")
-        .withImagePullPolicy("IfNotPresent")
-        .withCommand("run-firewall")
-        .withEnv(
-            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -Xmx800M").build(),
-            V1EnvVarBuilder().withName("CONFIG_FILE").withValue(FloatConfigParams.FLOAT_CONFIG_PATH).build(),
-            V1EnvVarBuilder().withName(FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME).withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
-            V1EnvVarBuilder().withName("BASE_DIR").withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
-            secretEnvVar(
-                FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelSSLKeysStorePasswordSecretKey
-            ),
-            secretEnvVar(
-                FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelTrustStorePasswordSecretKey
-            ),
-            secretEnvVar(
-                FloatConfigParams.FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelEntryPasswordKey
-            )
-        )
-        .withPorts(
-            V1ContainerPortBuilder().withName("float-external").withContainerPort(
-                FloatConfigParams.FLOAT_EXTERNAL_PORT
-            ).build(),
-            V1ContainerPortBuilder().withName("float-internal").withContainerPort(
-                FloatConfigParams.FLOAT_INTERNAL_PORT
-            ).build()
-        ).withNewResources()
-        .withRequests(
-            listOf(
-                "memory" to Quantity("1024Mi"), "cpu" to Quantity(
-                    "0.5"
-                )
-            ).toMap()
-        )
-        .endResources()
-        .withVolumeMounts(
-            listOfNotNull(
-                V1VolumeMountBuilder()
-                    .withName(configDirMountName)
-                    .withMountPath(FloatConfigParams.FLOAT_CONFIG_DIR).build(),
-                V1VolumeMountBuilder()
-                    .withName(tunnelStoresMountName)
-                    .withMountPath(FloatConfigParams.FLOAT_TUNNEL_STORES_DIR).build(),
-                V1VolumeMountBuilder()
-                    .withName(networkParametersMountName)
-                    .withMountPath(FloatConfigParams.FLOAT_NETWORK_DIR).build()
-            )
-        )
-        .endContainer()
-        .withVolumes(
-            listOfNotNull(
-                azureFileMount(configDirMountName, floatConfigShare, azureFilesSecretName, true),
-                azureFileMount(tunnelStoresMountName, tunnelStoresShare, azureFilesSecretName, true),
-                azureFileMount(networkParametersMountName, networkParametersShare, azureFilesSecretName, true)
-            )
-        )
-        .withNewSecurityContext()
-        //corda is 1000
-        .withRunAsUser(1000)
-        .withRunAsGroup(1000)
-        .withFsGroup(1000)
-        .withRunAsNonRoot(true)
-        .endSecurityContext()
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
 }
 
 fun createDiskForArtemis(

@@ -9,7 +9,7 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static final String BRIDGE_BASE_DIR = "/opt/corda";
     public static final String BRIDGE_CONFIG_DIR = "/etc/corda";
     public static final String BRIDGE_CONFIG_FILENAME = "bridge.conf";
-    public static final String BRIDGE_CONFIG_PATH = BRIDGE_CONFIG_DIR + BRIDGE_CONFIG_FILENAME;
+    public static final String BRIDGE_CONFIG_PATH = BRIDGE_CONFIG_DIR + "/" + BRIDGE_CONFIG_FILENAME;
 
     public static final String BRIDGE_TUNNEL_STORES_DIR = BRIDGE_BASE_DIR + "/tunnel";
     public static final String BRIDGE_TUNNEL_SSL_KEYSTORE_FILENAME = TunnelConfigParams.TUNNEL_BRDIGE_KEYSTORE_FILENAME;
@@ -28,7 +28,7 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static final String BRIDGE_TRUSTSTORE_PATH = BRIDGE_CERTIFICATES_DIR + "/" + BRIDGE_TRUSTSTORE_FILENAME;
 
     public static final String BRIDGE_NETWORK_PARAMETERS_DIR = BRIDGE_BASE_DIR + "/" + "network";
-    public static final String BRIDGE_NETWORK_PARAMETERS_FILENAME = "network-params";
+    public static final String BRIDGE_NETWORK_PARAMETERS_FILENAME = "network-parameters";
     public static final String BRIDGE_NETWORK_PARAMETERS_PATH = BRIDGE_NETWORK_PARAMETERS_DIR + "/" + BRIDGE_NETWORK_PARAMETERS_FILENAME;
 
     public static String BRIDGE_CERTIFICATE_ORGANISATION = "CordaDeployerTunnel";
@@ -53,8 +53,9 @@ public final class BridgeConfigParams implements SubstitutableSource {
 
     public static String BRIDGE_ARTEMIS_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_KEYSTORE_PASSWORD";
     public static String BRIDGE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
-    public static String BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_KEYSTORE_PASSWORD";
-    public static String BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "ARTEMIS_TRUSTSTORE_PASSWORD";
+
+    public static String BRIDGE_KEYSTORE_PASSWORD_ENV_VAR_NAME = "KEYSTORE_PASSWORD";
+    public static String BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "TRUSTSTORE_PASSWORD";
 
 
     @NotNull

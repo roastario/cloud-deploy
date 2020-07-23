@@ -18,9 +18,7 @@ fun initialRegistrationJob(
     nodeDatasourceURLSecretKey: String,
     nodeDatasourceUsernameSecretKey: String,
     nodeDatasourcePasswordSecretyKey: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
+    artemisSecrets: ArtemisSecrets,
     nodeStoresSecretName: String,
     nodeKeyStorePasswordSecretKey: String,
     nodeTrustStorePasswordSecretKey: String,
@@ -31,7 +29,7 @@ fun initialRegistrationJob(
     val configFilesFolderMountName = "azurecordaconfigdir"
     val certificatesFolderMountName = "azurecordacertificatesdir"
     val networkFolderMountName = "networkdir"
-    val initialRegistrationJob = baseSetupJobBuilder(jobName, listOf("perform-registration"))
+    return baseSetupJobBuilder(jobName, listOf("perform-registration"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
                 .withName(p12FileFolderMountName)
@@ -100,13 +98,13 @@ fun initialRegistrationJob(
             ),
             secretEnvVar(
                 NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisTrustPassSecretKey
+                artemisSecrets.secretName,
+                artemisSecrets.trustStorePasswordKey
             ),
             secretEnvVar(
                 NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecretsName,
-                artemisStorePassSecretKey
+                artemisSecrets.secretName,
+                artemisSecrets.keyStorePasswordKey
             ),
             secretEnvVar(
                 NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
@@ -141,5 +139,4 @@ fun initialRegistrationJob(
         .endTemplate()
         .endSpec()
         .build()
-    return initialRegistrationJob
 }

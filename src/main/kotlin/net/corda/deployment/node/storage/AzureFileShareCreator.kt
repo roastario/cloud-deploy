@@ -96,3 +96,5 @@ data class AzureFilesDirectory(
 fun CloudFile.uploadFromByteArray(array: ByteArray) {
     this.uploadFromByteArray(array, 0, array.size)
 }
+
+data class AzureFileSecrets(val secretName: String, )

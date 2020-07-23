@@ -7,10 +7,8 @@ import net.corda.deployments.node.config.ArtemisConfigParams
 
 fun generateArtemisStoresJob(
     jobName: String,
+    artemisSecrets: ArtemisSecrets,
     azureFilesSecretName: String,
-    artemisSecretsName: String,
-    artemisStorePassSecretKey: String,
-    artemisTrustPassSecretKey: String,
     workingDir: AzureFilesDirectory
 ): V1Job {
     return baseSetupJobBuilder(jobName, listOf("generate-artemis-keystores"))
@@ -39,8 +37,8 @@ fun generateArtemisStoresJob(
                 ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY_ENV_VAR_NAME,
                 ArtemisConfigParams.ARTEMIS_CERTIFICATE_COUNTRY
             ),
-            secretEnvVar("ARTEMIS_STORE_PASS", artemisSecretsName, artemisStorePassSecretKey),
-            secretEnvVar("ARTEMIS_TRUST_PASS", artemisSecretsName, artemisTrustPassSecretKey)
+            secretEnvVar("ARTEMIS_STORE_PASS", artemisSecrets.secretName, artemisSecrets.keyStorePasswordKey),
+            secretEnvVar("ARTEMIS_TRUST_PASS", artemisSecrets.secretName, artemisSecrets.trustStorePasswordKey)
         )
         .endContainer()
         .withVolumes(

@@ -13,7 +13,15 @@ class ConfigGenerators {
             val configString = Thread.currentThread().contextClassLoader.getResourceAsStream(targetConfig).use {
                 IOUtils.toString(it, Charsets.UTF_8)
             }
-            return StringSubstitutor(params.toSubstitutionMap(), "#{", "}").replace(configString)
+            val paramsMap = params.toSubstitutionMap()
+
+            paramsMap.forEach { entry ->
+                if (entry.value == null){
+                    throw IllegalStateException("Substitution param: ${entry.key} has not been set!")
+                }
+            }
+
+            return StringSubstitutor(paramsMap, "#{", "}").replace(configString)
         }
     }
 

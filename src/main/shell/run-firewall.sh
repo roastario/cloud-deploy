@@ -8,6 +8,5 @@ java -Djava.security.egd=file:/dev/./urandom \
   -jar /opt/corda/firewall.jar \
   --base-directory ${BASE_DIR} \
   --config-file=${CONFIG_FILE} \
-  --log-to-console
-
-sleep 10000
+  --verbose \
+  --logging-level=DEBUG

@@ -45,9 +45,9 @@ public class NodeConfigParams implements SubstitutableSource {
     public static final String NODE_ARTEMIS_TRUSTSTORE_FILENAME = "artemis-truststore.jks";
     public static final String NODE_ARTEMIS_TRUSTSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + NODE_ARTEMIS_SSL_KEYSTORE_FILENAME;
 
-    private static final Integer NODE_P2P_PORT = 10200;
-    private static final Integer NODE_RPC_PORT = 10001;
-    private static final Integer NODE_RPC_ADMIN_PORT = 10002;
+    public static final Integer NODE_P2P_PORT = 10200;
+    public static final Integer NODE_RPC_PORT = 10001;
+    public static final Integer NODE_RPC_ADMIN_PORT = 10002;
 
     public static final String NODE_NETWORK_TRUST_ROOT_FILENAME = "network-trust-root.jks";
     public static final String NODE_NETWORK_TRUST_ROOT_PATH = NODE_CERTIFICATES_DIR + "/" + NODE_NETWORK_TRUST_ROOT_FILENAME;

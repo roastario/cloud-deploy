@@ -1,10 +1,13 @@
 package net.corda.deployment.node
 
 import com.microsoft.azure.management.compute.Disk
+import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployments.node.config.ArtemisConfigParams
+
+private const val ARTEMIS_PORT_NAME = "artemis-port"
 
 fun createArtemisDeployment(
     devNamespace: String,
@@ -42,7 +45,7 @@ fun createArtemisDeployment(
         .withCommand("run-artemis")
         .withEnv(V1EnvVarBuilder().withName("JAVA_ARGS").withValue("-XX:+UseParallelGC -Xms512M -Xmx768M").build())
         .withPorts(
-            V1ContainerPortBuilder().withName("artemis-port").withContainerPort(
+            V1ContainerPortBuilder().withName(ARTEMIS_PORT_NAME).withContainerPort(
                 ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT
             ).build()
         ).withNewResources()
@@ -98,5 +101,33 @@ fun createArtemisDeployment(
         .build()
 
     return artemisDeployment
+
+}
+
+fun createArtemisService(artemisDeployment: V1Deployment): V1Service {
+
+    return V1ServiceBuilder()
+        .withKind("Service")
+        .withApiVersion("v1")
+        .withNewMetadata()
+        .withNamespace(artemisDeployment.metadata?.namespace)
+        .withName(artemisDeployment.metadata?.name)
+        .withLabels(listOf("run" to artemisDeployment.metadata?.name).toMap())
+        .endMetadata()
+        .withNewSpec()
+        .withType("ClusterIP")
+        .withPorts(
+            V1ServicePortBuilder().withPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
+                .withProtocol("TCP")
+                .withTargetPort(
+                    IntOrString(
+                        artemisDeployment.spec?.template?.spec?.containers?.first()?.ports?.find { it.name == ARTEMIS_PORT_NAME }?.containerPort
+                            ?: throw IllegalStateException("could not find target port in deployment")
+                    )
+                )
+                .withName(ARTEMIS_PORT_NAME).build()
+        ).withSelector(listOf("run" to artemisDeployment.metadata?.name).toMap())
+        .endSpec()
+        .build()
 
 }
