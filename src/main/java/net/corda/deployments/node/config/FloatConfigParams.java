@@ -43,7 +43,7 @@ public final class FloatConfigParams implements SubstitutableSource {
     public static final String FLOAT_TUNNEL_TRUSTSTORE_PATH = FLOAT_TUNNEL_STORES_DIR + "/" + FLOAT_TUNNEL_TRUSTSTORE_FILENAME;
 
     public static final String FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME;
-    public static final String FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME;
+    public static final String FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME;
     public static final String FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME;
 
     public static final String FLOAT_CONFIG_DIR = "/etc/corda";

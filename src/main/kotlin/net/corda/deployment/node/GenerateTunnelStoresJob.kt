@@ -7,11 +7,7 @@ import net.corda.deployments.node.config.BridgeConfigParams
 
 fun generateTunnelStores(
     jobName: String,
-    azureFilesSecretName: String,
-    tunnelSecretName: String,
-    tunnelKeyStorePasswordKey: String,
-    tunnelTrustStorePasswordKey: String,
-    tunnelEntryPasswordKey: String,
+    firewallTunnelSecrets: FirewallTunnelSecrets,
     workingDirShare: AzureFilesDirectory
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
@@ -44,23 +40,23 @@ fun generateTunnelStores(
             ),
             secretEnvVar(
                 BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelSecretName,
-                tunnelKeyStorePasswordKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.keystorePasswordKey
             ),
             secretEnvVar(
-                BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME,
-                tunnelSecretName,
-                tunnelTrustStorePasswordKey
+                BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.truststorePasswordKey
             ),
             secretEnvVar(
                 BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME,
-                tunnelSecretName,
-                tunnelEntryPasswordKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.entryPasswordKey
             )
         )
         .endContainer()
         .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false)
+            azureFileMount(workingDirMountName, workingDirShare, false)
         )
         .withRestartPolicy("Never")
         .endSpec()

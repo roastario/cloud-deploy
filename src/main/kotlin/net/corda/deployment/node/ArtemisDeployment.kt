@@ -4,16 +4,14 @@ import com.microsoft.azure.management.compute.Disk
 import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
-import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployments.node.config.ArtemisConfigParams
 
 private const val ARTEMIS_PORT_NAME = "artemis-port"
 
 fun createArtemisDeployment(
     devNamespace: String,
-    azureFilesSecretName: String,
-    configShare: AzureFilesDirectory,
-    storesShare: AzureFilesDirectory,
+    configuredArtemisBroker: ConfiguredArtemisBroker,
+    storesShare: GeneratedArtemisStores,
     dataDisk: Disk?,
     runId: String
 ): V1Deployment {
@@ -75,8 +73,8 @@ fun createArtemisDeployment(
         .endContainer()
         .withVolumes(
             listOfNotNull(
-                azureFileMount(brokerBaseDirShare, configShare, azureFilesSecretName, false),
-                azureFileMount(storesMountName, storesShare, azureFilesSecretName, true),
+                azureFileMount(brokerBaseDirShare, configuredArtemisBroker.baseDir, false),
+                azureFileMount(storesMountName, storesShare.outputDir, true),
                 dataDisk?.let {
                     V1VolumeBuilder()
                         .withNewAzureDisk()

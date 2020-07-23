@@ -17,14 +17,13 @@ import java.util.concurrent.TimeoutException
 fun azureFileMount(
     mountName: String,
     share: AzureFilesDirectory,
-    azureFilesSecretName: String,
     readOnly: Boolean
 ): V1Volume {
     return V1VolumeBuilder()
         .withName(mountName)
         .withNewAzureFile()
         .withShareName(share.legacyClient.name)
-        .withSecretName(azureFilesSecretName)
+        .withSecretName(share.azureFileSecrets.secretName)
         .withReadOnly(readOnly)
         .endAzureFile()
         .build()
@@ -128,7 +127,7 @@ fun waitForJob(
     throw TimeoutException("job ${job.metadata?.name} did not complete within expected time")
 }
 
-fun dumpLogsForJob(clientSource: () -> ApiClient, job: V1Job) {
+fun dumpLogsForJob(job: V1Job, clientSource: () -> ApiClient) {
     val client = clientSource()
     val pod = CoreV1Api(client).listNamespacedPod(
         "testingzone",

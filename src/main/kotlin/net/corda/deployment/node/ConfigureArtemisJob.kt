@@ -7,9 +7,8 @@ import net.corda.deployments.node.config.ArtemisConfigParams
 
 fun configureArtemis(
     jobName: String,
-    azureFilesSecretName: String,
     artemisSecrets: ArtemisSecrets,
-    artemisStoresDirectory: AzureFilesDirectory,
+    generatedArtemisStores: GeneratedArtemisStores,
     workingDirShare: AzureFilesDirectory
 ): V1Job {
     val workingDirMountName = "azureworkingdir"
@@ -69,11 +68,10 @@ fun configureArtemis(
         )
         .endContainer()
         .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
+            azureFileMount(workingDirMountName, workingDirShare, false),
             azureFileMount(
                 storesDirMountName,
-                artemisStoresDirectory,
-                azureFilesSecretName,
+                generatedArtemisStores.outputDir,
                 true
             )
         )

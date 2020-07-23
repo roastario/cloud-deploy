@@ -18,7 +18,7 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static final String BRIDGE_TUNNEL_TRUSTSTORE_PATH = BRIDGE_TUNNEL_STORES_DIR + "/" + BRIDGE_TUNNEL_TRUSTSTORE_FILENAME;
 
     public static final String BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME = "TUNNEL_SSL_KEYSTORE_PASSWORD";
-    public static final String BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME = "TUNNEL_TRUSTSTORE_PASSWORD";
+    public static final String BRIDGE_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME = "TUNNEL_TRUSTSTORE_PASSWORD";
     public static final String BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME = "TUNNEL_ENTRY_PASSWORD";
 
     public static final String BRIDGE_CERTIFICATES_DIR = BRIDGE_BASE_DIR + "/certificates";

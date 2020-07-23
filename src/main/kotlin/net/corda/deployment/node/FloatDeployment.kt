@@ -11,11 +11,7 @@ fun createFloatDeployment(
     floatConfigShare: AzureFilesDirectory,
     tunnelStoresShare: AzureFilesDirectory,
     networkParametersShare: AzureFilesDirectory,
-    tunnelStoresSecretName: String,
-    tunnelSSLKeysStorePasswordSecretKey: String,
-    tunnelTrustStorePasswordSecretKey: String,
-    tunnelEntryPasswordKey: String,
-    azureFilesSecretName: String
+    firewallTunnelSecrets: FirewallTunnelSecrets
 ): V1Deployment {
     val configDirMountName = "config-dir"
     val tunnelStoresMountName = "tunnel-stores-dir"
@@ -49,18 +45,18 @@ fun createFloatDeployment(
             V1EnvVarBuilder().withName("BASE_DIR").withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
             secretEnvVar(
                 FloatConfigParams.FLOAT_TUNNEL_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelSSLKeysStorePasswordSecretKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.keystorePasswordKey
             ),
             secretEnvVar(
                 FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelTrustStorePasswordSecretKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.truststorePasswordKey
             ),
             secretEnvVar(
                 FloatConfigParams.FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelEntryPasswordKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.entryPasswordKey
             )
         )
         .withPorts(
@@ -98,19 +94,16 @@ fun createFloatDeployment(
                 azureFileMount(
                     configDirMountName,
                     floatConfigShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     tunnelStoresMountName,
                     tunnelStoresShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     networkParametersMountName,
                     networkParametersShare,
-                    azureFilesSecretName,
                     true
                 )
             )

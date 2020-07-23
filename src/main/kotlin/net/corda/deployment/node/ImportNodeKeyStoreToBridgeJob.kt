@@ -8,7 +8,6 @@ import net.corda.deployments.node.config.NodeConfigParams
 
 fun importNodeKeyStoreToBridgeJob(
     jobName: String,
-    azureFilesSecretName: String,
     nodeCertificatesSecretName: String,
     nodeKeyStorePasswordSecretKey: String,
     bridgeCertificatesSecretName: String,
@@ -57,11 +56,10 @@ fun importNodeKeyStoreToBridgeJob(
         )
         .endContainer()
         .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, azureFilesSecretName, false),
+            azureFileMount(workingDirMountName, workingDirShare, false),
             azureFileMount(
                 nodeCertificatesMountName,
                 nodeCertificatesShare,
-                azureFilesSecretName,
                 true
             )
         )

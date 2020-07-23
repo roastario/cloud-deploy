@@ -1,10 +1,8 @@
 package net.corda.deployment.node
 
-import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
 import net.corda.deployment.node.storage.AzureFilesDirectory
-import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.BridgeConfigParams
 
 fun createBridgeDeployment(
@@ -15,16 +13,12 @@ fun createBridgeDeployment(
     artemisStoresShare: AzureFilesDirectory,
     bridgeStoresShare: AzureFilesDirectory,
     networkParametersShare: AzureFilesDirectory,
-    tunnelStoresSecretName: String,
-    tunnelSSLKeysStorePasswordSecretKey: String,
-    tunnelTrustStorePasswordSecretKey: String,
-    tunnelEntryPasswordKey: String,
+    firewallTunnelSecrets: FirewallTunnelSecrets,
     artemisSecrets: ArtemisSecrets,
     bridgeStoresSecretName: String,
     bridgeKeyStorePasswordKey: String,
     nodeStoresSecretName: String,
-    sharedTrustStorePasswordKey: String,
-    azureFilesSecretName: String
+    sharedTrustStorePasswordKey: String
 ): V1Deployment {
 
     val configDirMountName = "config-dir"
@@ -63,18 +57,18 @@ fun createBridgeDeployment(
             //TUNNEL SECRETS
             secretEnvVar(
                 BridgeConfigParams.BRIDGE_TUNNEL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelSSLKeysStorePasswordSecretKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.keystorePasswordKey
             ),
             secretEnvVar(
-                BridgeConfigParams.BRIDGE_TUNNEL_TRUST_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelTrustStorePasswordSecretKey
+                BridgeConfigParams.BRIDGE_TUNNEL_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.truststorePasswordKey
             ),
             secretEnvVar(
                 BridgeConfigParams.BRIDGE_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME,
-                tunnelStoresSecretName,
-                tunnelEntryPasswordKey
+                firewallTunnelSecrets.secretName,
+                firewallTunnelSecrets.entryPasswordKey
             ),
             //ARTEMIS SECRETS
             secretEnvVar(
@@ -133,31 +127,26 @@ fun createBridgeDeployment(
                 azureFileMount(
                     configDirMountName,
                     bridgeConfigShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     tunnelStoresDirMountName,
                     tunnelStoresShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     networkParametersMountName,
                     networkParametersShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     artemisStoresDirMountName,
                     artemisStoresShare,
-                    azureFilesSecretName,
                     true
                 ),
                 azureFileMount(
                     localStoresDirMountName,
                     bridgeStoresShare,
-                    azureFilesSecretName,
                     true
                 )
             )
@@ -175,30 +164,3 @@ fun createBridgeDeployment(
         .build()
 
 }
-
-//fun createBridgeService(bridgeDeployment: V1Deployment): V1Service {
-//    return V1ServiceBuilder()
-//        .withKind("Service")
-//        .withApiVersion("v1")
-//        .withNewMetadata()
-//        .withNamespace(bridgeDeployment.metadata?.namespace)
-//        .withName(bridgeDeployment.metadata?.name)
-//        .withLabels(listOf("run" to bridgeDeployment.metadata?.name).toMap())
-//        .endMetadata()
-//        .withNewSpec()
-//        .withType("ClusterIP")
-//        .withPorts(
-//            V1ServicePortBuilder().withPort(ArtemisConfigParams.ARTEMIS_ACCEPTOR_PORT)
-//                .withProtocol("TCP")
-//                .withTargetPort(
-//                    IntOrString(
-//                        bridgeDeployment.spec?.template?.spec?.containers?.first()?.ports?.find { it.name == ARTEMIS_PORT_NAME }?.containerPort
-//                            ?: throw IllegalStateException("could not find target port in deployment")
-//                    )
-//                )
-//                .withName(ARTEMIS_PORT_NAME).build()
-//        ).withSelector(listOf("run" to artemisDeployment.metadata?.name).toMap())
-//        .endSpec()
-//        .build()
-//
-//}

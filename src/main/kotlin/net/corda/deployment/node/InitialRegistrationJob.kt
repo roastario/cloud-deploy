@@ -8,7 +8,6 @@ import net.corda.deployments.node.config.NodeConfigParams
 
 fun initialRegistrationJob(
     jobName: String,
-    azureFilesSecretName: String,
     nodeConfigSecretsName: String,
     credentialsSecretName: String,
     p12FileSecretName: String,
@@ -124,13 +123,11 @@ fun initialRegistrationJob(
             azureFileMount(
                 certificatesFolderMountName,
                 certificatesShare,
-                azureFilesSecretName,
                 false
             ),
             azureFileMount(
                 networkFolderMountName,
                 networkParametersShare,
-                azureFilesSecretName,
                 false
             )
         )

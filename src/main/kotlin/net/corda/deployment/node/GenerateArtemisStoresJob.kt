@@ -8,7 +8,6 @@ import net.corda.deployments.node.config.ArtemisConfigParams
 fun generateArtemisStoresJob(
     jobName: String,
     artemisSecrets: ArtemisSecrets,
-    azureFilesSecretName: String,
     workingDir: AzureFilesDirectory
 ): V1Job {
     return baseSetupJobBuilder(jobName, listOf("generate-artemis-keystores"))
@@ -42,7 +41,7 @@ fun generateArtemisStoresJob(
         )
         .endContainer()
         .withVolumes(
-            azureFileMount("azureworkingdir", workingDir, azureFilesSecretName, false)
+            azureFileMount("azureworkingdir", workingDir, false)
         )
         .withRestartPolicy("Never")
         .endSpec()

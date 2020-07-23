@@ -102,6 +102,13 @@ interface SimpleApplier {
         namespace: String = "default",
         apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = false }
     )
+
+    fun create(o: Any, namespace: String = "default", apiClient: () -> ApiClient) = create(o, namespace, apiClient())
+    fun apply(
+        o: List<Any>,
+        namespace: String = "default",
+        apiClient: () -> ApiClient
+    ) = apply(o, namespace, apiClient())
 }
 
 val simpleApply = object : SimpleApplier {
@@ -119,15 +126,16 @@ val simpleApply = object : SimpleApplier {
                     try {
                         method.invoke(apiInstance, namespace, o, "true", null, null)
                     } catch (e: InvocationTargetException) {
-                        if (e.cause is ApiException){
+                        if (e.cause is ApiException) {
                             System.err.println((e.cause as ApiException).responseBody)
                         }
+                        throw e
                     }
                 } else {
                     try {
                         method.invoke(apiInstance, o, null, null, null)
                     } catch (e: InvocationTargetException) {
-                        if (e.cause is ApiException){
+                        if (e.cause is ApiException) {
                             System.err.println((e.cause as ApiException).responseBody)
                         }
                         throw e
