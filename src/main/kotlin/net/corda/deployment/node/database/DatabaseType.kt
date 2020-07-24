@@ -57,6 +57,6 @@ data class DatabaseConfigParams(
 val H2_DB = DatabaseConfigParams(
     jdbcURL = "jdbc:h2:file:\"\${baseDirectory}\"/persistence;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0;LOCK_TIMEOUT=10000",
     username = "sa",
-    password = "",
+    password = "password",
     type = DatabaseType.H2
 )

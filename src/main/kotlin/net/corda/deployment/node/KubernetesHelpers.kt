@@ -87,8 +87,8 @@ fun keyValueEnvVar(key: String?, value: String?): V1EnvVar {
 fun licenceAcceptEnvVar() = keyValueEnvVar("ACCEPT_LICENSE", "Y")
 
 fun waitForJob(
-    namespace: String,
     job: V1Job,
+    namespace: String,
     clientSource: () -> ApiClient,
     duration: Duration = Duration.ofMinutes(5)
 ): V1Job {

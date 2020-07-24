@@ -2,6 +2,7 @@ package net.corda.deployment.node.storage
 
 import com.azure.storage.common.StorageSharedKeyCredential
 import com.azure.storage.file.share.ShareClient
+import com.azure.storage.file.share.ShareFileClient
 import com.azure.storage.file.share.ShareServiceClient
 import com.azure.storage.file.share.ShareServiceClientBuilder
 import com.microsoft.azure.management.Azure
@@ -76,11 +77,11 @@ class AzureFileShareCreator(
 
     private fun getModernClient(): ShareServiceClient {
         val storageAccount = storageAccount.value
-        val shareServiceClient = ShareServiceClientBuilder()
-            .endpoint("https://${storageAccount.name()}.file.core.windows.net")
+        val fileEndPoint = storageAccount.endPoints().primary().file()
+        return ShareServiceClientBuilder()
+            .endpoint(fileEndPoint)
             .credential(StorageSharedKeyCredential(storageAccount.name(), storageAccount.keys[0].value()))
             .buildClient()
-        return shareServiceClient
     }
 
     private fun getLegacyClient(
@@ -93,16 +94,15 @@ class AzureFileShareCreator(
 
         while (Instant.now().isBefore(startTime.plusSeconds(timeout.seconds))) {
             try {
-                val cloudFileShare = CloudStorageAccount.parse(
+                return CloudStorageAccount.parse(
                     "DefaultEndpointsProtocol=https;" +
                             "AccountName=${storageAccount.name()};" +
                             "AccountKey=${storageAccount.keys[0].value()};" +
                             "EndpointSuffix=core.windows.net"
                 ).createCloudFileClient().getShareReference(directoryName)
-                return cloudFileShare
             } catch (e: Exception) {
                 println("Still waiting for storage account to be visible on DNS")
-                Thread.sleep(10)
+                Thread.sleep(1000)
             }
         }
 
@@ -120,6 +120,21 @@ data class AzureFilesDirectory(
 
 fun CloudFile.uploadFromByteArray(array: ByteArray) {
     this.uploadFromByteArray(array, 0, array.size)
+}
+
+fun ShareFileClient.uploadFromByteArray(array: ByteArray) {
+    if (!this.exists()) {
+        this.create(array.size.toLong())
+    }
+    this.upload(array.inputStream(), array.size.toLong())
+}
+
+fun ShareFileClient.enforceExistence(): ShareFileClient {
+    return this.also {
+        if (!it.exists()) {
+            throw IllegalStateException("no such file: ${it.filePath}")
+        }
+    }
 }
 
 data class AzureFileSecrets(

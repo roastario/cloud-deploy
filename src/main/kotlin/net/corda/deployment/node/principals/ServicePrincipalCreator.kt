@@ -24,9 +24,11 @@ import java.time.temporal.ChronoUnit
 import java.util.*
 
 
-class ServicePrincipalCreator(private val azure: Azure, private val resourceGroup: ResourceGroup, private val runSuffix: String) {
+class ServicePrincipalCreator(private val azure: Azure,
+                              private val resourceGroup:
+                              ResourceGroup, private val runSuffix: String) {
 
-    fun createClusterServicePrincipal(
+    fun createServicePrincipalAndCredentials(
     ): PrincipalAndCredentials {
         val servicePrincipalKeyPair = generateRSAKeyPair()
         val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login")
@@ -48,7 +50,6 @@ class ServicePrincipalCreator(private val azure: Azure, private val resourceGrou
         val pemFile = generatePemFile(servicePrincipalKeyPair, servicePrincipalCert)
         val keyAlias = "key-vault-login-key"
         val p12Bytes = createPksc12Store(servicePrincipalKeyPair.private, servicePrincipalCert, keyAlias, p12KeyStorePassword)
-
         return PrincipalAndCredentials(
             createdSP,
             servicePrincipalPassword,
@@ -59,12 +60,12 @@ class ServicePrincipalCreator(private val azure: Azure, private val resourceGrou
     }
 }
 
-data class PrincipalAndCredentials(
+class PrincipalAndCredentials(
     val servicePrincipal: ServicePrincipal,
     val servicePrincipalPassword: String,
     val servicePrincipalKeyPair: KeyPair,
     val servicePrincipalCert: Certificate,
-    val pemFile: File,
+    val pemBytes: ByteArray,
     val p12Bytes: ByteArray,
     val p12FilePassword: String,
     val p12KeyAlias: String
@@ -86,7 +87,7 @@ private fun createPksc12Store(
     return byteArrayOutputStream.toByteArray()
 }
 
-private fun generatePemFile(keyPair: KeyPair, cert: Certificate): File {
+private fun generatePemFile(keyPair: KeyPair, cert: Certificate): ByteArray {
     val pemObjectPriv = PemObject("PRIVATE KEY", keyPair.private.encoded)
     val pemObjectCert = PemObject("CERTIFICATE", cert.encoded)
     val tempFile = Files.createTempFile("sp", ".pem").toFile()
@@ -95,7 +96,7 @@ private fun generatePemFile(keyPair: KeyPair, cert: Certificate): File {
         pemWriter.writeObject(pemObjectPriv)
         pemWriter.writeObject(pemObjectCert)
     }
-    return tempFile
+    return tempFile.readBytes()
 }
 
 private fun generateRSAKeyPair(): KeyPair {

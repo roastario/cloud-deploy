@@ -12,6 +12,7 @@ public class AzureKeyVaultConfigParams implements SubstitutableSource {
 
 
     public static final String CREDENTIALS_DIR = "/etc/hsm";
+    public static final String CONFIG_FILENAME = "az-kv.conf";
     public static final String CREDENTIALS_P12_FILENAME = "az_kv.p12";
     public static final String CREDENTIALS_P12_PATH = CREDENTIALS_DIR + "/" + CREDENTIALS_P12_FILENAME;
     public static final String KEY_PROTECTION_MODE_HARDWARE = "HARDWARE";

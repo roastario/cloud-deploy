@@ -1,21 +1,25 @@
 package net.corda.deployment.node
 
+import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
 import net.corda.deployment.node.storage.AzureFilesDirectory
+import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.FloatConfigParams
+
+private const val FLOAT_EXTERNAL_PORT_NAME = "external-port"
+private const val FLOAT_INTERNAL_PORT_NAME = "internal-port"
+
 
 fun createFloatDeployment(
     namespace: String,
     runId: String,
     floatConfigShare: AzureFilesDirectory,
     tunnelStoresShare: AzureFilesDirectory,
-    networkParametersShare: AzureFilesDirectory,
     firewallTunnelSecrets: FirewallTunnelSecrets
 ): V1Deployment {
     val configDirMountName = "config-dir"
     val tunnelStoresMountName = "tunnel-stores-dir"
-    val networkParametersMountName = "network-parameters-dir"
     return V1DeploymentBuilder()
         .withKind("Deployment")
         .withApiVersion("apps/v1")
@@ -60,10 +64,10 @@ fun createFloatDeployment(
             )
         )
         .withPorts(
-            V1ContainerPortBuilder().withName("float-external").withContainerPort(
+            V1ContainerPortBuilder().withName(FLOAT_EXTERNAL_PORT_NAME).withContainerPort(
                 FloatConfigParams.FLOAT_EXTERNAL_PORT
             ).build(),
-            V1ContainerPortBuilder().withName("float-internal").withContainerPort(
+            V1ContainerPortBuilder().withName(FLOAT_INTERNAL_PORT_NAME).withContainerPort(
                 FloatConfigParams.FLOAT_INTERNAL_PORT
             ).build()
         ).withNewResources()
@@ -82,10 +86,7 @@ fun createFloatDeployment(
                     .withMountPath(FloatConfigParams.FLOAT_CONFIG_DIR).build(),
                 V1VolumeMountBuilder()
                     .withName(tunnelStoresMountName)
-                    .withMountPath(FloatConfigParams.FLOAT_TUNNEL_STORES_DIR).build(),
-                V1VolumeMountBuilder()
-                    .withName(networkParametersMountName)
-                    .withMountPath(FloatConfigParams.FLOAT_NETWORK_DIR).build()
+                    .withMountPath(FloatConfigParams.FLOAT_TUNNEL_STORES_DIR).build()
             )
         )
         .endContainer()
@@ -99,11 +100,6 @@ fun createFloatDeployment(
                 azureFileMount(
                     tunnelStoresMountName,
                     tunnelStoresShare,
-                    true
-                ),
-                azureFileMount(
-                    networkParametersMountName,
-                    networkParametersShare,
                     true
                 )
             )
@@ -119,4 +115,32 @@ fun createFloatDeployment(
         .endTemplate()
         .endSpec()
         .build()
+}
+
+fun createIntraClusterInternalFloatService(floatDeployment: V1Deployment): V1Service {
+
+    return V1ServiceBuilder()
+        .withKind("Service")
+        .withApiVersion("v1")
+        .withNewMetadata()
+        .withNamespace(floatDeployment.metadata?.namespace)
+        .withName(floatDeployment.metadata?.name)
+        .withLabels(listOf("run" to floatDeployment.metadata?.name).toMap())
+        .endMetadata()
+        .withNewSpec()
+        .withType("ClusterIP")
+        .withPorts(
+            V1ServicePortBuilder().withPort(FloatConfigParams.FLOAT_INTERNAL_PORT)
+                .withProtocol("TCP")
+                .withTargetPort(
+                    IntOrString(
+                        floatDeployment.spec?.template?.spec?.containers?.first()?.ports?.find { it.name == FLOAT_INTERNAL_PORT_NAME }?.containerPort
+                            ?: throw IllegalStateException("could not find target port in deployment")
+                    )
+                )
+                .withName(FLOAT_INTERNAL_PORT_NAME).build()
+        ).withSelector(listOf("run" to floatDeployment.metadata?.name).toMap())
+        .endSpec()
+        .build()
+
 }

@@ -11,6 +11,7 @@ import io.kubernetes.client.openapi.models.V1Service
 import net.corda.deployment.node.kubernetes.SecretCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
+import net.corda.deployment.node.storage.enforceExistence
 import net.corda.deployments.node.config.ArtemisConfigParams
 import org.apache.commons.lang3.RandomStringUtils
 import kotlin.IllegalStateException
@@ -71,7 +72,7 @@ class ArtemisSetup(
         val jobName = "generate-artemis-stores-$randomSuffix"
         val generateArtemisStoresJob = generateArtemisStoresJob(jobName, secrets!!, workingDir)
         simpleApply.create(generateArtemisStoresJob, namespace)
-        waitForJob(namespace, generateArtemisStoresJob, api)
+        waitForJob(generateArtemisStoresJob, namespace, api)
         dumpLogsForJob(generateArtemisStoresJob, api)
         return GeneratedArtemisStores(workingDir).also {
             this.generatedStores = it
@@ -93,7 +94,7 @@ class ArtemisSetup(
             workingDirShare
         )
         simpleApply.create(configureArtemisJob, namespace)
-        waitForJob(namespace, configureArtemisJob, api)
+        waitForJob(configureArtemisJob, namespace, api)
         dumpLogsForJob(configureArtemisJob, api)
         return ConfiguredArtemisBroker(workingDirShare).also {
             this.configuredBroker = it
@@ -101,12 +102,18 @@ class ArtemisSetup(
     }
 
     fun deploy(
-        api: () -> ApiClient
+        api: () -> ApiClient,
+        useAzureDiskForData: Boolean = false
     ): ArtemisDeployment {
         if (configuredBroker == null) {
             throw IllegalStateException("Must configure artemis broker before deploying")
         }
-        val deployment = createArtemisDeployment(namespace, configuredBroker!!, generatedStores!!, null, randomSuffix)
+        val disk = if (useAzureDiskForData) {
+            createDiskForArtemis()
+        } else {
+            null
+        }
+        val deployment = createArtemisDeployment(namespace, configuredBroker!!, generatedStores!!, disk, randomSuffix)
         val service = createArtemisService(deployment)
         simpleApply.create(deployment, namespace, api)
         simpleApply.create(service, namespace, api)
@@ -116,27 +123,27 @@ class ArtemisSetup(
 
 class ArtemisDeployment(val deployment: V1Deployment, val service: V1Service) {
     val serviceName: String
-        get() = service.metadata?.name ?: throw IllegalStateException("service name not available")
+        get() = service.metadata?.name
+            ?: throw IllegalStateException("artemis service name not available, something has gone seriously wrong")
 }
 
 class ConfiguredArtemisBroker(val baseDir: AzureFilesDirectory)
 
 class GeneratedArtemisStores(val outputDir: AzureFilesDirectory) {
+    val nodeStore: ShareFileClient
+        get() {
+            return outputDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_NODE_KEYSTORE_FILENAME)
+                .enforceExistence()
+        }
     val trustStore: ShareFileClient
         get() {
-            return outputDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME).also {
-                if (!it.exists()) {
-                    throw IllegalStateException("no such file: ${ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME}")
-                }
-            }
+            return outputDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
+                .enforceExistence()
         }
     val bridgeStore: ShareFileClient
         get() {
-            return outputDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME).also {
-                if (!it.exists()) {
-                    throw IllegalStateException("no such file: ${ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME}")
-                }
-            }
+            return outputDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
+                .enforceExistence()
         }
 }
 
@@ -146,4 +153,7 @@ data class ArtemisSecrets(
     val trustStorePasswordKey: String,
     val clusterPasswordKey: String
 )
+
+
+
 

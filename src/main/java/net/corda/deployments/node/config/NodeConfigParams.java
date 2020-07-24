@@ -33,17 +33,15 @@ public class NodeConfigParams implements SubstitutableSource {
 
     public static final String NODE_BASE_DIR = "/opt/corda";
     public static final String NODE_CONFIG_DIR = "/etc/corda";
+    public static final String NODE_HSM_CONFIG_DIR = AzureKeyVaultConfigParams.CREDENTIALS_DIR;
     public static final String NODE_CONFIG_FILENAME = "node.conf";
-    public static final String NODE_AZ_KV_CONFIG_FILENAME = "az-kv.conf";
     public static final String NODE_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_CONFIG_FILENAME;
-    public static final String NODE_AZ_KV_CONFIG_PATH = NODE_CONFIG_DIR + "/" + NODE_AZ_KV_CONFIG_FILENAME;
+    public static final String NODE_AZ_KV_CONFIG_PATH = NODE_HSM_CONFIG_DIR + "/" + AzureKeyVaultConfigParams.CONFIG_FILENAME;
     public static final String NODE_CERTIFICATES_DIR = NODE_BASE_DIR + "/" + "certificates";
 
-    public static final String NODE_ARTEMIS_STORES_DIR = "/opt/corda/artemis";
-    public static final String NODE_ARTEMIS_SSL_KEYSTORE_FILENAME = "artemisnode.jks";
-    public static final String NODE_ARTEMIS_SSL_KEYSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + NODE_ARTEMIS_SSL_KEYSTORE_FILENAME;
-    public static final String NODE_ARTEMIS_TRUSTSTORE_FILENAME = "artemis-truststore.jks";
-    public static final String NODE_ARTEMIS_TRUSTSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + NODE_ARTEMIS_SSL_KEYSTORE_FILENAME;
+    public static final String NODE_ARTEMIS_STORES_DIR = NODE_BASE_DIR + "/artemis";
+    public static final String NODE_ARTEMIS_SSL_KEYSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + ArtemisConfigParams.ARTEMIS_NODE_KEYSTORE_FILENAME;
+    public static final String NODE_ARTEMIS_TRUSTSTORE_PATH = NODE_ARTEMIS_STORES_DIR + "/" + ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME;
 
     public static final Integer NODE_P2P_PORT = 10200;
     public static final Integer NODE_RPC_PORT = 10001;

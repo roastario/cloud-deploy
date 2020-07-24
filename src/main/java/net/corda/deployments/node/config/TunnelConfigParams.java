@@ -4,6 +4,6 @@ public class TunnelConfigParams {
 
     public static final String TUNNEL_TRUSTSTORE_FILENAME = "tunnel-truststore.jks";
     public static final String TUNNEL_FLOAT_KEYSTORE_FILENAME = "float.jks";
-    public static final String TUNNEL_BRDIGE_KEYSTORE_FILENAME = "bridge.jks";
+    public static final String TUNNEL_BRIDGE_KEYSTORE_FILENAME = "bridge.jks";
 
 }

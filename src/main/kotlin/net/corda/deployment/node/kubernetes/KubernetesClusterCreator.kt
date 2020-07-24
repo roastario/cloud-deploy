@@ -10,11 +10,9 @@ import com.microsoft.azure.management.containerservice.implementation.Kubernetes
 import com.microsoft.azure.management.network.Network
 import com.microsoft.azure.management.network.PublicIPAddress
 import com.microsoft.azure.management.resources.ResourceGroup
-import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
 import io.kubernetes.client.openapi.ApiException
 import net.corda.deployment.node.database.SqlServerCreator
-import net.corda.deployment.node.deployHelloWorld
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.networking.ClusterNetwork
 import net.corda.deployment.node.networking.NetworkCreator
@@ -23,7 +21,6 @@ import net.corda.deployment.node.principals.PrincipalAndCredentials
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.security.Security
 import kotlin.random.Random
 import kotlin.random.nextUInt
@@ -262,7 +259,7 @@ fun main() {
     val dbCreator = SqlServerCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
     val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
 
-    val servicePrincipal = servicePrincipalCreator.createClusterServicePrincipal()
+    val servicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials()
     val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(servicePrincipal)
     val networkForClusters = networkCreator.createNetworkForClusters()
     val database = dbCreator.createSQLServerDBForCorda(networkForClusters)
@@ -279,7 +276,6 @@ fun main() {
     )
 
     println("Press Enter to deploy hello world").let { readLine() }
-    allowAllFailures { deployHelloWorld(clusters.floatCluster) }
 
 
     val delete = println("Delete Resources?").let { readLine() }
