@@ -54,22 +54,6 @@ fun main(args: Array<String>) {
     val nonDmzShareCreator: AzureFileShareCreator = infrastructure.internalShareCreator(namespace)
 
 
-    val dmzFileShareCreator = AzureFileShareCreator(
-        azure = mngAzure,
-        resourceGroup = resourceGroup,
-        runSuffix = randSuffix,
-        namespace = namespace,
-        api = defaultClientSource
-    )
-
-    val nonDmzFileShareCreator = AzureFileShareCreator(
-        azure = mngAzure,
-        resourceGroup = resourceGroup,
-        runSuffix = randSuffix,
-        namespace = namespace,
-        api = defaultClientSource
-    )
-
     /// END CONSTANTS ///
 
     //configure key vault
