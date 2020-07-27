@@ -17,6 +17,7 @@ fun createNodeDeployment(
     artemisDirShare: AzureFilesDirectory,
     certificatesDirShare: AzureFilesDirectory,
     configDirShare: AzureFilesDirectory,
+    driversShareDir: AzureFilesDirectory,
     artemisSecrets: ArtemisSecrets,
     nodeStoresSecrets: NodeStoresSecrets,
     keyVaultSecrets: KeyVaultSecrets,
@@ -26,6 +27,7 @@ fun createNodeDeployment(
     val nodeConfigDirMountName = "azurecordaconfigdir"
     val nodeCertificatesDirMountName = "azurecordacertificatesdir"
     val artemisDirMountName = "artemisstoresdir"
+    val nodeDriversDirMountName = "driversdir"
 
     return V1DeploymentBuilder()
         .withKind("Deployment")
@@ -49,8 +51,9 @@ fun createNodeDeployment(
         .withName("node-$runId")
         .withImage("entdocker.software.r3.com/corda-enterprise-alpine-zulu-java1.8-4.6-snapshot:latest")
         .withImagePullPolicy("IfNotPresent")
-        .withCommand("run-firewall")
+        .withCommand("run-corda")
         .withEnv(
+            licenceAcceptEnvVar(),
             secretEnvVar(
                 AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
                 keyVaultSecrets.credentialPasswordsSecretName,
@@ -122,7 +125,10 @@ fun createNodeDeployment(
                 .withMountPath(NodeConfigParams.NODE_CERTIFICATES_DIR).build(),
             V1VolumeMountBuilder()
                 .withName(artemisDirMountName)
-                .withMountPath(NodeConfigParams.NODE_ARTEMIS_STORES_DIR).build()
+                .withMountPath(NodeConfigParams.NODE_ARTEMIS_STORES_DIR).build(),
+            V1VolumeMountBuilder()
+                .withName(nodeDriversDirMountName)
+                .withMountPath(NodeConfigParams.NODE_DRIVERS_DIR).build()
         )
         .endContainer()
         .withVolumes(
@@ -141,7 +147,8 @@ fun createNodeDeployment(
                 artemisDirMountName,
                 artemisDirShare,
                 true
-            )
+            ),
+            azureFileMount(nodeDriversDirMountName, driversShareDir, true)
         )
         .withNewSecurityContext()
         //corda is 1000

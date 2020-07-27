@@ -11,7 +11,12 @@ import com.microsoft.azure.management.network.Network
 import com.microsoft.azure.management.network.PublicIPAddress
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.rest.LogLevel
+import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.ApiException
+import io.kubernetes.client.util.ClientBuilder
+import io.kubernetes.client.util.KubeConfig
+import net.corda.deployment.node.KeyVaultSetup
+import net.corda.deployment.node.database.SqlServerAndCredentials
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.networking.ClusterNetwork
@@ -21,6 +26,7 @@ import net.corda.deployment.node.principals.PrincipalAndCredentials
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.ByteArrayOutputStream
+import java.io.InputStreamReader
 import java.security.Security
 import kotlin.random.Random
 import kotlin.random.nextUInt
@@ -125,7 +131,23 @@ data class Clusters(
     val clusterNetwork: Network,
     val nodeSubnetName: String,
     val floatSubnetName: String
-)
+) {
+    fun dmzApiSource(): () -> ApiClient {
+        return {
+            floatCluster.adminKubeConfigContent().inputStream().use { config ->
+                ClientBuilder.kubeconfig(KubeConfig.loadKubeConfig(InputStreamReader(config))).build()
+            }.also { it.isDebugging = false }
+        }
+    }
+
+    fun nonDmzApiSource(): () -> ApiClient {
+        return {
+            nodeCluster.adminKubeConfigContent().inputStream().use { config ->
+                ClientBuilder.kubeconfig(KubeConfig.loadKubeConfig(InputStreamReader(config))).build()
+            }.also { it.isDebugging = false }
+        }
+    }
+}
 
 
 private fun KubernetesCluster.DefinitionStages.WithCreate.enableRBAC(): KubernetesCluster.DefinitionStages.WithCreate {
@@ -239,62 +261,7 @@ private fun KubernetesCluster.DefinitionStages.WithNetworkProfile.defineLoadBala
 
 
 @ExperimentalUnsignedTypes
-fun main() {
-    val bouncyCastleProvider = BouncyCastleProvider()
-    Security.addProvider(bouncyCastleProvider)
 
-    val mngAzure: Azure = Azure.configure()
-        .withLogLevel(LogLevel.BODY_AND_HEADERS)
-        .authenticate(AzureCliCredentials.create())
-        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
-
-
-    val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
-    val randSuffix = Random.nextUInt().toString(36).toLowerCase()
-
-    val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-    val servicePrincipalCreator = ServicePrincipalCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-    val keyVaultCreator = KeyVaultCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-    val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-    val dbCreator = SqlServerCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-    val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = randSuffix)
-
-    val servicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials()
-    val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(servicePrincipal)
-    val networkForClusters = networkCreator.createNetworkForClusters()
-    val database = dbCreator.createSQLServerDBForCorda(networkForClusters)
-
-
-    val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
-    val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
-
-    val clusters = clusterCreator.createClusters(
-        p2pIpAddress = publicIpForAzureP2p,
-        rpcIPAddress = publicIpForAzureRpc,
-        servicePrincipal = servicePrincipal,
-        network = networkForClusters
-    )
-
-    println("Press Enter to deploy hello world").let { readLine() }
-
-
-    val delete = println("Delete Resources?").let { readLine() }
-    if (delete != null && delete.toLowerCase().startsWith("y")) {
-        println("DELETING CLUSTERS")
-        allowAllFailures { mngAzure.kubernetesClusters().deleteById(clusters.floatCluster.id()) }
-        allowAllFailures { mngAzure.kubernetesClusters().deleteById(clusters.nodeCluster.id()) }
-        println("DELETING CLUSTER NODE RESOURCE GROUPS")
-        allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.floatCluster.nodeResourceGroup()) }
-        allowAllFailures { mngAzure.resourceGroups().deleteByName(clusters.nodeCluster.nodeResourceGroup()) }
-        println("DELETING DATABASES")
-        allowAllFailures { mngAzure.sqlServers().deleteById(database.sqlServer.id()) }
-        println("DELETING NETWORK")
-        allowAllFailures { mngAzure.networks().deleteById(clusters.clusterNetwork.id()) }
-        println("DELETING IP ADDRESSES")
-        allowAllFailures { mngAzure.publicIPAddresses().deleteById(publicIpForAzureP2p.id()) }
-        allowAllFailures { mngAzure.publicIPAddresses().deleteById(publicIpForAzureRpc.id()) }
-    }
-}
 
 inline fun <T : Any?> allowAllFailures(block: () -> T): T? {
     try {

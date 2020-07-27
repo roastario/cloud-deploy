@@ -51,5 +51,15 @@
       <option name="name" value="MavenLocal" />
       <option name="url" value="file:/$USER_HOME$/.m2/repository/" />
     </remote-repository>
+    <remote-repository>
+      <option name="id" value="maven3" />
+      <option name="name" value="maven3" />
+      <option name="url" value="http://ci-artifactory.corda.r3cev.com/artifactory/corda-dependencies-dev" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="maven4" />
+      <option name="name" value="maven4" />
+      <option name="url" value="http://ci-artifactory.corda.r3cev.com/artifactory/corda-dependencies" />
+    </remote-repository>
   </component>
 </project>

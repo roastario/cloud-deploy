@@ -66,6 +66,8 @@ public class NodeConfigParams implements SubstitutableSource {
     public static final String NODE_NETWORK_PARAMETERS_SETUP_DIR = "/tmp/network";
     @NotNull
     public static final String NETWORK_PARAMETERS_FILENAME = "network-parameters";
+    @NotNull
+    public static final String NODE_DRIVERS_DIR = NODE_BASE_DIR + "/drivers";
 
 
     public NodeConfigParams(String x500Name,

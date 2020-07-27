@@ -7,6 +7,8 @@ import com.microsoft.rest.LogLevel
 import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.database.H2_DB
+import net.corda.deployment.node.float.FloatSetup
+import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
 import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import org.apache.commons.lang3.RandomStringUtils
@@ -42,16 +44,33 @@ fun main(args: Array<String>) {
         .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
 
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
+
+
     val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
-    val azureFileShareCreator = AzureFileShareCreator(
+    val azureInfrastureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, randSuffix)
+    val infrastructure = azureInfrastureDeployer.setupInfrastructure()
+
+    val dmzShareCreator: AzureFileShareCreator = infrastructure.dmzShareCreator(namespace)
+    val nonDmzShareCreator: AzureFileShareCreator = infrastructure.internalShareCreator(namespace)
+
+
+    val dmzFileShareCreator = AzureFileShareCreator(
         azure = mngAzure,
         resourceGroup = resourceGroup,
         runSuffix = randSuffix,
         namespace = namespace,
         api = defaultClientSource
     )
-    /// END CONSTANTS ///
 
+    val nonDmzFileShareCreator = AzureFileShareCreator(
+        azure = mngAzure,
+        resourceGroup = resourceGroup,
+        runSuffix = randSuffix,
+        namespace = namespace,
+        api = defaultClientSource
+    )
+
+    /// END CONSTANTS ///
 
     //configure key vault
     val keyVaultSetup = KeyVaultSetup(mngAzure, resourceGroup, azureFileShareCreator, namespace, randSuffix)
@@ -115,7 +134,9 @@ fun main(args: Array<String>) {
     //continue setting up the node
     nodeSetup.copyArtemisStores(generatedArtemisStores)
     nodeSetup.createArtemisSecrets(artemisSecrets)
-
+    nodeSetup.createKeyVaultSecrets(vaultSecrets)
+    nodeSetup.copyToDriversDir(dbParams, HsmType.AZURE)
+    nodeSetup.deploy()
 
     exitProcess(0)
 }

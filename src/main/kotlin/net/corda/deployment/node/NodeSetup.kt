@@ -1,7 +1,9 @@
 package net.corda.deployment.node
 
 import com.azure.storage.file.share.ShareFileClient
+import freighter.utils.GradleUtils
 import io.kubernetes.client.openapi.ApiClient
+import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.database.DatabaseConfigParams
 import net.corda.deployment.node.kubernetes.SecretCreator
@@ -12,6 +14,7 @@ import net.corda.deployment.node.storage.uploadFromByteArray
 import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.NodeConfigParams
 import org.apache.commons.lang3.RandomStringUtils
+import java.nio.file.Files
 
 class NodeSetup(
     val shareCreator: AzureFileShareCreator,
@@ -20,6 +23,9 @@ class NodeSetup(
     val api: () -> ApiClient,
     val randomSuffix: String
 ) {
+    private lateinit var driversDirShare: AzureFilesDirectory
+    private lateinit var vaultSecrets: KeyVaultSecrets
+    private lateinit var artemisStoresDir: AzureFilesDirectory
     private lateinit var artemisSecrets: ArtemisSecrets
     private var initialRegistrationResult: InitialRegistrationResult? = null
     private var nodeStoresSecrets: NodeStoresSecrets? = null
@@ -120,9 +126,14 @@ class NodeSetup(
         }
     }
 
+    fun createKeyVaultSecrets(keyVaultSecrets: KeyVaultSecrets) {
+        this.vaultSecrets = keyVaultSecrets
+    }
+
     fun createArtemisSecrets(artemisSecrets: ArtemisSecrets) {
         this.artemisSecrets = artemisSecrets
     }
+
 
     fun copyArtemisStores(artemisStores: GeneratedArtemisStores) {
         val nodeArtemisDir = shareCreator.createDirectoryFor("node-artemis-stores")
@@ -134,6 +145,8 @@ class NodeSetup(
 
         nodeArtemisTrustStore.createFrom(artemisStores.trustStore)
         nodeArtemisKeyStore.createFrom(artemisStores.nodeStore)
+
+        this.artemisStoresDir = nodeArtemisDir
     }
 
     fun performInitialRegistration(
@@ -165,11 +178,54 @@ class NodeSetup(
         }
     }
 
-    fun deploy() {
+    fun copyToDriversDir(dbParams: DatabaseConfigParams, hsmParams: HsmType) {
+        val driversDirShare = shareCreator.createDirectoryFor("node-drivers")
+        val allDriverJars = (hsmParams.requiredDriverJars + dbParams.type.driverDependencies).flatMap {
+            GradleUtils.getArtifactAndDependencies(it.driverGroup, it.driverArtifact, it.driverVersion)
+        }
 
+        val driverRoot = driversDirShare.modernClient.rootDirectoryClient
+        allDriverJars.sorted().forEach { dependencyPath ->
+            val fileName = dependencyPath.fileName.toString()
+            println("uploading: ${dependencyPath.toFile().absolutePath} to drivers/${fileName}")
+            val fileClient = driverRoot.getFileClient(fileName)
+            if (!fileClient.exists()) {
+                fileClient.create(Files.size(dependencyPath))
+            }
+            fileClient.uploadFromFile(dependencyPath.toAbsolutePath().toString())
+        }
+
+        this.driversDirShare = driversDirShare
+    }
+
+    fun deploy() {
+        val nodeDeployment = createNodeDeployment(
+            namespace,
+            randomSuffix,
+            artemisStoresDir,
+            initialRegistrationResult!!.certificatesDir,
+            configDirectory!!,
+            driversDirShare,
+            artemisSecrets,
+            nodeStoresSecrets!!,
+            vaultSecrets,
+            databaseSecrets!!
+        )
+        println(Yaml.dump(nodeDeployment))
+        simpleApply.create(nodeDeployment, namespace, api)
     }
 
 
+}
+
+enum class HsmType(
+    val requiredDriverJars: List<GradleDependency>
+) {
+    AZURE(
+        listOf(
+            GradleDependency("net.corda.azure.hsm", "azure-keyvault-jar-builder", "1.0")
+        )
+    )
 }
 
 data class NodeDatabaseSecrets(

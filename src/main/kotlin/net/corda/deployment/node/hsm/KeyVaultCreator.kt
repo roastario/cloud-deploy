@@ -19,12 +19,7 @@ class KeyVaultCreator(
     fun createKeyVaultAndConfigureServicePrincipalAccess(
         servicePrincipal: PrincipalAndCredentials
     ): Vault {
-        val a: Azure = Azure.configure()
-            .withLogLevel(LogLevel.BODY_AND_HEADERS)
-            .authenticate(AzureCliCredentials.create())
-            .withDefaultSubscription()
-
-        val kv = a.vaults()
+        val kv = azure.vaults()
             .define("cordaVault-${runSuffix}")
             .withRegion(resourceGroup.region()).withExistingResourceGroup(resourceGroup).withEmptyAccessPolicy()
             .withAccessFromAllNetworks().create()

@@ -1,14 +1,16 @@
-package net.corda.deployment.node
+package net.corda.deployment.node.float
 
 import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
+import net.corda.deployment.node.FirewallTunnelSecrets
+import net.corda.deployment.node.azureFileMount
+import net.corda.deployment.node.secretEnvVar
 import net.corda.deployment.node.storage.AzureFilesDirectory
-import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.FloatConfigParams
 
-private const val FLOAT_EXTERNAL_PORT_NAME = "external-port"
-private const val FLOAT_INTERNAL_PORT_NAME = "internal-port"
+internal const val FLOAT_EXTERNAL_PORT_NAME = "external-port"
+internal const val FLOAT_INTERNAL_PORT_NAME = "internal-port"
 
 
 fun createFloatDeployment(
@@ -118,7 +120,6 @@ fun createFloatDeployment(
 }
 
 fun createIntraClusterInternalFloatService(floatDeployment: V1Deployment): V1Service {
-
     return V1ServiceBuilder()
         .withKind("Service")
         .withApiVersion("v1")
@@ -142,5 +143,5 @@ fun createIntraClusterInternalFloatService(floatDeployment: V1Deployment): V1Ser
         ).withSelector(listOf("run" to floatDeployment.metadata?.name).toMap())
         .endSpec()
         .build()
-
 }
+
