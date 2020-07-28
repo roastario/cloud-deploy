@@ -29,7 +29,7 @@ public final class FloatConfigParams implements SubstitutableSource {
     public static final String FLOAT_BASE_DIR = "/opt/corda";
     public static final int FLOAT_INTERNAL_PORT = 10000;
     public static final int FLOAT_EXTERNAL_PORT = 10200;
-    public static final String FLOAT_CERTIFICATE_COMMON_NAME = "Float";
+    public static final String FLOAT_CERTIFICATE_COMMON_NAME = "float";
     public static String FLOAT_CERTIFICATE_SUBJECT = "CN=" + FLOAT_CERTIFICATE_COMMON_NAME + ", O=" + BRIDGE_CERTIFICATE_ORGANISATION
             + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
 
@@ -48,7 +48,7 @@ public final class FloatConfigParams implements SubstitutableSource {
 
     public static final String FLOAT_CONFIG_DIR = "/etc/corda";
     public static final String FLOAT_CONFIG_FILENAME = "float.conf";
-    public static final String FLOAT_CONFIG_PATH = FLOAT_CONFIG_DIR +"/" + FLOAT_CONFIG_FILENAME;
+    public static final String FLOAT_CONFIG_PATH = FLOAT_CONFIG_DIR + "/" + FLOAT_CONFIG_FILENAME;
 
     public static final String ALL_LOCAL_ADDRESSES = ArtemisConfigParams.ARTEMIS_ACCEPTOR_ALL_LOCAL_ADDRESSES;
 

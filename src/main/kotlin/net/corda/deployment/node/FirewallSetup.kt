@@ -18,20 +18,19 @@ class FirewallSetup(
     private var tunnelStores: GeneratedTunnelStores? = null
     private var tunnelSecrets: FirewallTunnelSecrets? = null
 
-    fun generateFirewallTunnelSecrets(api: () -> ApiClient): FirewallTunnelSecrets {
+    fun generateFirewallTunnelSecrets(
+        nonDmzApiSource: () -> ApiClient,
+        dmzApiSource: () -> ApiClient
+    ): FirewallTunnelSecrets {
         val tunnelSecretName = "tunnel-store-secrets-$randomSuffix"
         val tunnelEntryPasswordKey = "tunnelentrypassword"
         val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
         val tunnelTrustStorePasswordKey = "tunneltruststorepassword";
-        val tunnelSecret = SecretCreator.createStringSecret(
-            tunnelSecretName,
-            listOf(
-                tunnelEntryPasswordKey to RandomStringUtils.randomAlphanumeric(32),
-                tunnelKeyStorePasswordKey to RandomStringUtils.randomAlphanumeric(32),
-                tunnelTrustStorePasswordKey to RandomStringUtils.randomAlphanumeric(32)
-            ).toMap()
-            , namespace, api
-        )
+        val entryPair = tunnelEntryPasswordKey to RandomStringUtils.randomAlphanumeric(32)
+        val keyStorePair = tunnelKeyStorePasswordKey to RandomStringUtils.randomAlphanumeric(32)
+        val trustStorePair = tunnelTrustStorePasswordKey to RandomStringUtils.randomAlphanumeric(32)
+        createTunnelSecrets(tunnelSecretName, entryPair, keyStorePair, trustStorePair, nonDmzApiSource)
+        createTunnelSecrets(tunnelSecretName, entryPair, keyStorePair, trustStorePair, dmzApiSource)
         return FirewallTunnelSecrets(
             tunnelSecretName,
             tunnelEntryPasswordKey,
@@ -40,6 +39,24 @@ class FirewallSetup(
         ).also {
             this.tunnelSecrets = it
         }
+    }
+
+    private fun createTunnelSecrets(
+        tunnelSecretName: String,
+        tunnelEntryPasswordAndKey: Pair<String, String>,
+        tunnelKeyStorePasswordAndKey: Pair<String, String>,
+        tunnelTrustStorePasswordAndKey: Pair<String, String>,
+        dmzApiSource: () -> ApiClient
+    ) {
+        SecretCreator.createStringSecret(
+            tunnelSecretName,
+            listOf(
+                tunnelEntryPasswordAndKey,
+                tunnelKeyStorePasswordAndKey,
+                tunnelTrustStorePasswordAndKey
+            ).toMap()
+            , namespace, dmzApiSource
+        )
     }
 
     fun generateTunnelStores(api: () -> ApiClient): GeneratedTunnelStores {
@@ -55,7 +72,7 @@ class FirewallSetup(
             tunnelStoresShare
         )
 
-        simpleApply.create(generateTunnelStoresJob, namespace)
+        simpleApply.create(generateTunnelStoresJob, namespace, api)
         waitForJob(generateTunnelStoresJob, namespace, api)
         dumpLogsForJob(generateTunnelStoresJob, api)
 

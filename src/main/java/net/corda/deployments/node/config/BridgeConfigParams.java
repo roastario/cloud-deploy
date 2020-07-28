@@ -39,7 +39,7 @@ public final class BridgeConfigParams implements SubstitutableSource {
     public static String BRIDGE_CERTIFICATE_LOCALITY_ENV_VAR_NAME = "LOCALITY";
     public static String BRIDGE_CERTIFICATE_COUNTRY = "GB";
     public static String BRIDGE_CERTIFICATE_COUNTRY_ENV_VAR_NAME = "COUNTRY";
-    public static String BRIDGE_CERTIFICATE_COMMON_NAME = "Bridge";
+    public static String BRIDGE_CERTIFICATE_COMMON_NAME = "bridge";
     public static String BRIDGE_CERTIFICATE_SUBJECT = "CN=" + BRIDGE_CERTIFICATE_COMMON_NAME + ", O=" + BRIDGE_CERTIFICATE_ORGANISATION
             + ", OU=" + BRIDGE_CERTIFICATE_ORGANISATION_UNIT + ", L=" + BRIDGE_CERTIFICATE_LOCALITY + ", C=" + BRIDGE_CERTIFICATE_COUNTRY;
 

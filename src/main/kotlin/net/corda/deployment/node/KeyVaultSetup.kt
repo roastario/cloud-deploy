@@ -13,6 +13,7 @@ import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployments.node.config.AzureKeyVaultConfigParams
 
 class KeyVaultSetup(
+    val keyVaultAndCredentials: KeyVaultAndCredentials,
     val mngAzure: Azure,
     val resourceGroup: ResourceGroup,
     val shareCreator: AzureFileShareCreator,
@@ -22,30 +23,15 @@ class KeyVaultSetup(
 
     private var keyVaultSecrets: KeyVaultSecrets? = null
     private var generatedConfig: String? = null
-    private var vaultAndCredentials: KeyVaultAndCredentials? = null
-
-    fun createKeyVaultWithServicePrincipal(): KeyVaultAndCredentials {
-        val servicePrincipalCreator = ServicePrincipalCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runId)
-        val keyVaultCreator = KeyVaultCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runId)
-        val servicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials()
-        val vault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(servicePrincipal)
-        return KeyVaultAndCredentials(keyVaultCredentials = servicePrincipal, vault = vault).also {
-            vaultAndCredentials = it
-        }
-    }
 
     fun generateKeyVaultCryptoServiceConfig(): String {
-        if (vaultAndCredentials == null) {
-            throw IllegalStateException("must create vault and credentials before generating config")
-        }
-
         val keyVaultParams = AzureKeyVaultConfigParams
             .builder()
             .withServicePrincipalCredentialsFilePath(AzureKeyVaultConfigParams.CREDENTIALS_P12_PATH)
             .withServicePrincipalCredentialsFilePassword(AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME.toEnvVar())
             .withKeyVaultClientId(AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME.toEnvVar())
-            .withKeyAlias(vaultAndCredentials?.keyVaultCredentials?.p12KeyAlias)
-            .withKeyVaultURL(vaultAndCredentials?.vault?.vaultUri())
+            .withKeyAlias(keyVaultAndCredentials?.keyVaultCredentials?.p12KeyAlias)
+            .withKeyVaultURL(keyVaultAndCredentials?.vault?.vaultUri())
             .withKeyVaultProtectionMode(AzureKeyVaultConfigParams.KEY_PROTECTION_MODE_SOFTWARE)
             .build()
 
@@ -67,8 +53,8 @@ class KeyVaultSetup(
         SecretCreator.createStringSecret(
             keyVaultCredentialsSecretName,
             listOf(
-                azKeyVaultCredentialsFilePasswordKey to vaultAndCredentials!!.keyVaultCredentials.p12FilePassword,
-                azKeyVaultCredentialsClientIdKey to vaultAndCredentials!!.keyVaultCredentials.servicePrincipal.applicationId()
+                azKeyVaultCredentialsFilePasswordKey to keyVaultAndCredentials.keyVaultCredentials.p12FilePassword,
+                azKeyVaultCredentialsClientIdKey to keyVaultAndCredentials.keyVaultCredentials.servicePrincipal.applicationId()
             ).toMap(),
             namespace,
             api
@@ -78,7 +64,7 @@ class KeyVaultSetup(
         SecretCreator.createByteArraySecret(
             credentialsAndConfigSecretName,
             listOf(
-                AzureKeyVaultConfigParams.CREDENTIALS_P12_FILENAME to vaultAndCredentials!!.keyVaultCredentials.p12Bytes,
+                AzureKeyVaultConfigParams.CREDENTIALS_P12_FILENAME to keyVaultAndCredentials.keyVaultCredentials.p12Bytes,
                 AzureKeyVaultConfigParams.CONFIG_FILENAME to generatedConfig!!.toByteArray(Charsets.UTF_8)
             ).toMap(),
             namespace,

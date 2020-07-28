@@ -71,7 +71,7 @@ class BridgeSetup(
             bridgeCertificatesShare
         )
 
-        simpleApply.create(importNodeKeyStoreToBridgeJob, namespace)
+        simpleApply.create(importNodeKeyStoreToBridgeJob, namespace, api)
         waitForJob(importNodeKeyStoreToBridgeJob, namespace, api)
         dumpLogsForJob(importNodeKeyStoreToBridgeJob, api)
         return BridgeStores(bridgeCertificatesShare).also {

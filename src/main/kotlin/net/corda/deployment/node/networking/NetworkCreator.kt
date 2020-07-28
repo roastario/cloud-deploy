@@ -29,12 +29,13 @@ data class ClusterNetwork(
 
     @ExperimentalUnsignedTypes
     fun getNextAvailableDMZInternalIP(): String {
-        var lastByteOfAddress: UByte = 1u
+        var lastByteOfAddress: UByte = 0u
 
-        while (!createdNetwork.isPrivateIPAddressAvailable("$DMZ_IP_PREFIX.$lastByteOfAddress") && lastByteOfAddress < 254u) {
+        do {
             lastByteOfAddress++
-            Thread.sleep(500)
-        }
+            println("checking if: $DMZ_IP_PREFIX.$lastByteOfAddress is available as internalIp")
+        } while (!createdNetwork.isPrivateIPAddressAvailable("$DMZ_IP_PREFIX.$lastByteOfAddress") && lastByteOfAddress < 254u)
+
 
         if (!createdNetwork.isPrivateIPAddressAvailable("$DMZ_IP_PREFIX.$lastByteOfAddress") || lastByteOfAddress >= 254u) {
             throw IllegalStateException("Could not find an available IP within DMZ subnet")

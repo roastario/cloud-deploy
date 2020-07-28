@@ -5,6 +5,8 @@ import com.microsoft.azure.management.resources.ResourceGroup
 import net.corda.deployment.node.KeyVaultSetup
 import net.corda.deployment.node.database.SqlServerAndCredentials
 import net.corda.deployment.node.database.SqlServerCreator
+import net.corda.deployment.node.float.AzureFloatSetup
+import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.kubernetes.Clusters
 import net.corda.deployment.node.kubernetes.KubernetesClusterCreator
@@ -28,8 +30,8 @@ class AzureInfrastructureDeployer(
         val dbCreator = SqlServerCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
         val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
 
-        val keyVaultServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials()
-        val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials()
+        val keyVaultServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("vault")
+        val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster")
         val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(keyVaultServicePrincipal)
         val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
         val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
@@ -46,7 +48,7 @@ class AzureInfrastructureDeployer(
 
         val keyVaultAndCredentials = KeyVaultSetup.KeyVaultAndCredentials(keyVaultServicePrincipal, keyVault)
 
-        return AzureInfrastructure(clusters, keyVaultAndCredentials, database)
+        return AzureInfrastructure(clusters, keyVaultAndCredentials, database, mngAzure, resourceGroup, runSuffix)
     }
 
     class AzureInfrastructure(
@@ -62,7 +64,26 @@ class AzureInfrastructureDeployer(
         }
 
         fun dmzShareCreator(namespace: String): AzureFileShareCreator {
-            return AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.nonDmzApiSource())
+            return AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.dmzApiSource())
+        }
+
+        fun keyVaultSetup(namespace: String): KeyVaultSetup {
+            return KeyVaultSetup(
+                keyVaultAndCredentials,
+                azure,
+                resourceGroup,
+                internalShareCreator(namespace),
+                namespace,
+                runSuffix
+            )
+        }
+
+        fun floatSetup(namespace: String): FloatSetup {
+            return AzureFloatSetup(namespace, dmzShareCreator(namespace), runSuffix, clusters.clusterNetwork)
+        }
+
+        fun p2pAddress(): String {
+            return clusters.clusterNetwork.p2pAddress.ipAddress()
         }
     }
 

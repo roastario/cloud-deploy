@@ -4,7 +4,10 @@ import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.graphrbac.BuiltInRole
 import com.microsoft.azure.management.graphrbac.ServicePrincipal
 import com.microsoft.azure.management.resources.ResourceGroup
+import org.apache.commons.lang3.ArrayUtils
 import org.apache.commons.lang3.RandomStringUtils
+import org.apache.commons.lang3.StringUtils
+import org.apache.commons.text.RandomStringGenerator
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
@@ -16,28 +19,34 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.FileWriter
 import java.math.BigInteger
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.*
 import java.security.cert.Certificate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.*
+import kotlin.random.Random
 
+const val VALID_SERVICE_PRINCIPAL_PASSWORD_SYMBOLS = "!£^*()#@.,~"
 
-class ServicePrincipalCreator(private val azure: Azure,
-                              private val resourceGroup:
-                              ResourceGroup, private val runSuffix: String) {
+class ServicePrincipalCreator(
+    private val azure: Azure,
+    private val resourceGroup:
+    ResourceGroup, private val runSuffix: String
+) {
 
-    fun createServicePrincipalAndCredentials(
-    ): PrincipalAndCredentials {
+    fun createServicePrincipalAndCredentials(principalId: String): PrincipalAndCredentials {
         val servicePrincipalKeyPair = generateRSAKeyPair()
-        val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login")
-        val servicePrincipalPassword = RandomStringUtils.randomGraph(16)
-        val createdSP = azure.accessManagement().servicePrincipals().define("testingspforaks$runSuffix")
-            .withNewApplication("http://testingspforaks${runSuffix}")
+        val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login, OU=${principalId}")
+        val clientSecret = createServicePrincipalPassword(32)
+        val spName = "testingspforaks${principalId}$runSuffix"
+        val createdSP = azure.accessManagement().servicePrincipals().define(spName)
+            .withNewApplication("http://${spName}")
             .withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, resourceGroup)
             .definePasswordCredential("cliLoginPwd")
-            .withPasswordValue(servicePrincipalPassword)
+            .withPasswordValue(clientSecret)
             .attach()
             .defineCertificateCredential("cliLoginCert")
             .withAsymmetricX509Certificate()
@@ -52,7 +61,7 @@ class ServicePrincipalCreator(private val azure: Azure,
         val p12Bytes = createPksc12Store(servicePrincipalKeyPair.private, servicePrincipalCert, keyAlias, p12KeyStorePassword)
         return PrincipalAndCredentials(
             createdSP,
-            servicePrincipalPassword,
+            clientSecret,
             servicePrincipalKeyPair,
             servicePrincipalCert,
             pemFile, p12Bytes, p12KeyStorePassword, keyAlias
@@ -107,7 +116,7 @@ private fun generateRSAKeyPair(): KeyPair {
 
 private fun createSelfSignedCertificate(keyPair: KeyPair, subjectDN: String): Certificate {
     val startDate = Date.from(Instant.now())
-    val endDate: Date = Date.from(Instant.now().plus(900, ChronoUnit.DAYS))
+    val endDate: Date = Date.from(Instant.now().plus(10000, ChronoUnit.DAYS))
     val dnName = X500Name(subjectDN)
     val certSerialNumber = BigInteger("${startDate.time}")
     val signatureAlgorithm = "SHA1WITHRSA"
@@ -116,4 +125,14 @@ private fun createSelfSignedCertificate(keyPair: KeyPair, subjectDN: String): Ce
         JcaX509v3CertificateBuilder(dnName, certSerialNumber, startDate, endDate, dnName, keyPair.public)
     return JcaX509CertificateConverter().setProvider(Security.getProvider("BC"))
         .getCertificate(certBuilder.build(contentSigner))
+}
+
+fun createServicePrincipalPassword(n: Int): String {
+    val numberOfNonSymbols = (3 * (n / 4)) + 1
+    val numberOfSymbols = (n / 4) + 1
+    val charArray = (RandomStringUtils.randomAlphanumeric(numberOfNonSymbols) + RandomStringUtils.random(
+        numberOfSymbols,
+        VALID_SERVICE_PRINCIPAL_PASSWORD_SYMBOLS
+    )).toCharArray().toMutableList().shuffled().toCharArray()
+    return String(charArray)
 }

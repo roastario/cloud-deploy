@@ -14,6 +14,18 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
+
+fun AzureFilesDirectory.toK8sMount(mountName: String, readOnly: Boolean): V1Volume {
+    return V1VolumeBuilder()
+        .withName(mountName)
+        .withNewAzureFile()
+        .withShareName(this.legacyClient.name)
+        .withSecretName(this.azureFileSecrets.secretName)
+        .withReadOnly(readOnly)
+        .endAzureFile()
+        .build()
+}
+
 fun azureFileMount(
     mountName: String,
     share: AzureFilesDirectory,

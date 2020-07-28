@@ -4,13 +4,12 @@ import com.azure.storage.file.share.ShareFileClient
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.rest.LogLevel
-import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.database.H2_DB
 import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
-import net.corda.deployment.node.kubernetes.allowAllFailures
 import net.corda.deployment.node.storage.AzureFileShareCreator
+import net.corda.deployment.node.storage.uploadFromByteArray
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
@@ -21,20 +20,6 @@ import kotlin.system.exitProcess
 @ExperimentalUnsignedTypes
 fun main(args: Array<String>) {
 
-    val nodeX500 = "O=BigCorporation,L=New York,C=US"
-    val nodeEmail = "stefano.franz@r3.com"
-    val nodeP2PAddress = "localhost"
-    val doormanURL = "http://networkservices:8080"
-    val networkMapURL = "http://networkservices:8080"
-    val rpcUsername = "u"
-    val rpcPassword = "p"
-    val dbParams = H2_DB
-
-    val defaultClientSource = { ClientBuilder.defaultClient() }
-
-    val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())
-    val namespace = "testingzone"
-    allowAllFailures { simpleApply.apply(nmsSetup, namespace = namespace) }
     val bouncyCastleProvider = BouncyCastleProvider()
     Security.addProvider(bouncyCastleProvider)
 
@@ -45,37 +30,48 @@ fun main(args: Array<String>) {
 
     val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
 
-
     val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
-    val azureInfrastureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, randSuffix)
-    val infrastructure = azureInfrastureDeployer.setupInfrastructure()
-
+    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, randSuffix)
+    val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
+    val namespace = "testingzone"
     val dmzShareCreator: AzureFileShareCreator = infrastructure.dmzShareCreator(namespace)
     val nonDmzShareCreator: AzureFileShareCreator = infrastructure.internalShareCreator(namespace)
 
+    val nodeX500 = "O=BigCorporation,L=New York,C=US"
+    val nodeEmail = "stefano.franz@r3.com"
+    val doormanURL = "http://networkservices:8080"
+    val networkMapURL = "http://networkservices:8080"
+    val rpcUsername = "u"
+    val rpcPassword = "p"
+    val dbParams = H2_DB
 
+    val namespaceYaml = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/namespace.yaml").reader())
+    val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())
+
+    simpleApply.apply(namespaceYaml, namespace = namespace, apiClient = infrastructure.clusters.nonDmzApiSource())
+    simpleApply.apply(namespaceYaml, namespace = namespace, apiClient = infrastructure.clusters.dmzApiSource())
+    simpleApply.apply(nmsSetup, namespace = namespace, apiClient = infrastructure.clusters.nonDmzApiSource())
     /// END CONSTANTS ///
 
     //configure key vault
-    val keyVaultSetup = KeyVaultSetup(mngAzure, resourceGroup, azureFileShareCreator, namespace, randSuffix)
-    val vaultAndCredentials = keyVaultSetup.createKeyVaultWithServicePrincipal()
-    val vaultConfig = keyVaultSetup.generateKeyVaultCryptoServiceConfig()
-    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets(defaultClientSource)
+    val keyVaultSetup = infrastructure.keyVaultSetup(namespace)
+    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
+    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets(infrastructure.clusters.nonDmzApiSource())
 
     //configure and deploy artemis
-    val artemisSetup = ArtemisSetup(mngAzure, resourceGroup, azureFileShareCreator, namespace, randSuffix)
-    val artemisSecrets = artemisSetup.generateArtemisSecrets(defaultClientSource)
-    val generatedArtemisStores = artemisSetup.generateArtemisStores(defaultClientSource)
-    val configuredArtemisBroker = artemisSetup.configureArtemisBroker(defaultClientSource)
-    val deployedArtemis = artemisSetup.deploy(defaultClientSource)
+    val artemisSetup = ArtemisSetup(mngAzure, resourceGroup, nonDmzShareCreator, namespace, randSuffix)
+    val artemisSecrets = artemisSetup.generateArtemisSecrets(infrastructure.clusters.nonDmzApiSource())
+    val generatedArtemisStores = artemisSetup.generateArtemisStores(infrastructure.clusters.nonDmzApiSource())
+    val configuredArtemisBroker = artemisSetup.configureArtemisBroker(infrastructure.clusters.nonDmzApiSource())
+    val deployedArtemis = artemisSetup.deploy(infrastructure.clusters.nonDmzApiSource())
 
 
     //configure and register the node
-    val nodeSetup = NodeSetup(azureFileShareCreator, dbParams, namespace, defaultClientSource, randSuffix)
+    val nodeSetup = NodeSetup(nonDmzShareCreator, dbParams, namespace, infrastructure.clusters.nonDmzApiSource(), randSuffix)
     nodeSetup.generateNodeConfig(
         nodeX500,
         nodeEmail,
-        nodeP2PAddress,
+        infrastructure.p2pAddress(),
         deployedArtemis.serviceName,
         doormanURL,
         networkMapURL,
@@ -88,31 +84,32 @@ fun main(args: Array<String>) {
     val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets)
 
     //setup the firewall tunnel
-    val firewallSetup = FirewallSetup(namespace, azureFileShareCreator, randSuffix)
-    val firewallTunnelSecrets = firewallSetup.generateFirewallTunnelSecrets(defaultClientSource)
-    val firewallTunnelStores = firewallSetup.generateTunnelStores(defaultClientSource)
+    val firewallSetup = FirewallSetup(namespace, nonDmzShareCreator, randSuffix)
+    val firewallTunnelSecrets =
+        firewallSetup.generateFirewallTunnelSecrets(infrastructure.clusters.nonDmzApiSource(), infrastructure.clusters.dmzApiSource())
+    val firewallTunnelStores = firewallSetup.generateTunnelStores(infrastructure.clusters.nonDmzApiSource())
 
     //configure and deploy the float
-    val floatSetup = FloatSetup(namespace, azureFileShareCreator, randSuffix)
+    val floatSetup: FloatSetup = infrastructure.floatSetup(namespace)
     floatSetup.copyTunnelStoreComponents(firewallTunnelStores)
     floatSetup.createTunnelSecrets(firewallTunnelSecrets)
     floatSetup.generateConfig()
     floatSetup.uploadConfig()
-    val floatDeployment = floatSetup.deploy(defaultClientSource)
+    val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource())
 
     //configure and deploy the bridge
-    val bridgeSetup = BridgeSetup(azureFileShareCreator, namespace, randSuffix)
-    val bridgeStoreSecrets = bridgeSetup.generateBridgeStoreSecrets(defaultClientSource)
-    val bridgeStores = bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult, defaultClientSource)
+    val bridgeSetup = BridgeSetup(nonDmzShareCreator, namespace, randSuffix)
+    bridgeSetup.generateBridgeStoreSecrets(infrastructure.clusters.nonDmzApiSource())
+    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult, infrastructure.clusters.nonDmzApiSource())
     bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
-    val bridgeTunnelComponents = bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
-    val bridgeArtemisComponents = bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
+    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
+    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
     bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
     bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
-    bridgeSetup.generateBridgeConfig(deployedArtemis.serviceName, floatDeployment.internalAddress)
+    bridgeSetup.generateBridgeConfig(deployedArtemis.serviceName, floatDeployment.internalService.getInternalAddress())
     bridgeSetup.uploadBridgeConfig()
     bridgeSetup.createArtemisSecrets(artemisSecrets)
-    val bridgeDeployment = bridgeSetup.deploy(defaultClientSource)
+    val bridgeDeployment = bridgeSetup.deploy(infrastructure.clusters.nonDmzApiSource())
 
 
     //continue setting up the node
@@ -133,12 +130,8 @@ fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Dura
         this.delete()
         this.create(sizeToCopy)
     }
-    val poller = this.beginCopy(
-        source.fileUrl,
-        null,
-        null
-    )
-    poller.waitForCompletion(timeout)
+    val array = source.openInputStream().readBytes()
+    this.uploadFromByteArray(array)
 }
 
 

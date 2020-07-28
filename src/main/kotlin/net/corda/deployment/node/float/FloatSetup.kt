@@ -80,15 +80,20 @@ open class FloatSetup(
         )
         val internalService = buildInternalService(floatDeployment)
         simpleApply.create(floatDeployment, namespace, api)
-        simpleApply.create(internalService, namespace, api)
+        simpleApply.create(internalService.underlyingService, namespace, api)
 
         return FloatDeployment(floatDeployment, internalService).also {
             this.deployment = it
         }
     }
 
-    open fun buildInternalService(deployment: V1Deployment): V1Service {
-        return createIntraClusterInternalFloatService(deployment)
+    open fun buildInternalService(deployment: V1Deployment): InternalFloatService {
+        val underlyingService = createIntraClusterInternalFloatService(deployment)
+        return object : InternalFloatService(underlyingService) {
+            override fun getInternalAddress(): String {
+                return underlyingService.metadata?.name ?: throw IllegalStateException("internal float service name not available")
+            }
+        }
     }
 
     fun createTunnelSecrets(secrets: FirewallTunnelSecrets) {
@@ -99,10 +104,8 @@ open class FloatSetup(
 
 class FloatTunnelComponents(val tunnelShare: AzureFilesDirectory)
 
-open class FloatDeployment(val deployment: V1Deployment, val internalService: V1Service, val externalService: V1Service? = null) {
-    val internalAddress: String
-        get() {
-            return internalService.metadata?.name ?: throw IllegalStateException("internal float service name not available")
-        }
+class FloatDeployment(val deployment: V1Deployment, val internalService: InternalFloatService, val externalService: V1Service? = null)
 
+abstract class InternalFloatService(val underlyingService: V1Service) {
+    abstract fun getInternalAddress(): String
 }

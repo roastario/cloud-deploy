@@ -96,19 +96,11 @@ val methodMap: Lazy<HashMap<Class<*>, PriorityQueue<ApiClassAndMethodPair>>> = l
 }
 
 interface SimpleApplier {
-    fun create(o: Any, namespace: String = "default", apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = false })
-    fun apply(
-        o: List<Any>,
-        namespace: String = "default",
-        apiClient: ApiClient = ClientBuilder.defaultClient().also { it.isDebugging = false }
-    )
+    fun create(o: Any, namespace: String, apiClient: ApiClient)
+    fun apply(o: List<Any>, namespace: String, apiClient: ApiClient)
 
-    fun create(o: Any, namespace: String = "default", apiClient: () -> ApiClient) = create(o, namespace, apiClient())
-    fun apply(
-        o: List<Any>,
-        namespace: String = "default",
-        apiClient: () -> ApiClient
-    ) = apply(o, namespace, apiClient())
+    fun create(o: Any, namespace: String, apiClient: () -> ApiClient) = create(o, namespace, apiClient())
+    fun apply(o: List<Any>, namespace: String, apiClient: () -> ApiClient) = apply(o, namespace, apiClient())
 }
 
 val simpleApply = object : SimpleApplier {

@@ -71,7 +71,7 @@ class ArtemisSetup(
         val workingDir = shareCreator.createDirectoryFor("artemis-stores")
         val jobName = "generate-artemis-stores-$randomSuffix"
         val generateArtemisStoresJob = generateArtemisStoresJob(jobName, secrets!!, workingDir)
-        simpleApply.create(generateArtemisStoresJob, namespace)
+        simpleApply.create(generateArtemisStoresJob, namespace, api)
         waitForJob(generateArtemisStoresJob, namespace, api)
         dumpLogsForJob(generateArtemisStoresJob, api)
         return GeneratedArtemisStores(workingDir).also {
@@ -93,7 +93,7 @@ class ArtemisSetup(
             generatedStores!!,
             workingDirShare
         )
-        simpleApply.create(configureArtemisJob, namespace)
+        simpleApply.create(configureArtemisJob, namespace, api)
         waitForJob(configureArtemisJob, namespace, api)
         dumpLogsForJob(configureArtemisJob, api)
         return ConfiguredArtemisBroker(workingDirShare).also {

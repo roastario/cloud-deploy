@@ -46,7 +46,8 @@ fun createFloatDeployment(
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-firewall")
         .withEnv(
-            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -Xmx800M").build(),
+            V1EnvVarBuilder().withName("JVM_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
+            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
             V1EnvVarBuilder().withName("CONFIG_FILE").withValue(FloatConfigParams.FLOAT_CONFIG_PATH).build(),
             V1EnvVarBuilder().withName("BASE_DIR").withValue(FloatConfigParams.FLOAT_BASE_DIR).build(),
             secretEnvVar(

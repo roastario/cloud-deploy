@@ -11,6 +11,7 @@ import com.microsoft.azure.management.network.Network
 import com.microsoft.azure.management.network.PublicIPAddress
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.rest.LogLevel
+import com.microsoft.rest.ServiceCallback
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.util.ClientBuilder
@@ -27,7 +28,10 @@ import net.corda.deployment.node.principals.ServicePrincipalCreator
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
+import java.net.URLEncoder
 import java.security.Security
+import java.util.concurrent.CompletableFuture
+import java.util.function.BiFunction
 import kotlin.random.Random
 import kotlin.random.nextUInt
 
@@ -114,21 +118,41 @@ class KubernetesClusterCreator(
             .enableRBAC()
 
 
-        val createdFloatCluster = floatClusterCreate.create()
-        val createdNodeCluster = nodeClusterCreate.create()
+        val floatClusterFuture = CompletableFuture<KubernetesCluster>().also { future ->
+            floatClusterCreate.createAsync(object : ServiceCallback<KubernetesCluster> {
+                override fun failure(t: Throwable) {
+                    future.completeExceptionally(t)
+                }
 
-        return Clusters(createdNodeCluster, createdFloatCluster, createdNetwork, nodeSubnetName, floatSubnetName)
+                override fun success(result: KubernetesCluster) {
+                    future.complete(result)
+                }
+            })
+        }
 
+        val nodeClusterFuture = CompletableFuture<KubernetesCluster>().also { future ->
+            nodeClusterCreate.createAsync(object : ServiceCallback<KubernetesCluster> {
+                override fun failure(t: Throwable) {
+                    future.completeExceptionally(t)
+                }
 
+                override fun success(result: KubernetesCluster) {
+                    future.complete(result)
+                }
+            })
+        }
+
+        return floatClusterFuture.thenCombineAsync<KubernetesCluster, Clusters>(nodeClusterFuture) { floatCluster, nodeCluster ->
+            Clusters(nodeCluster, floatCluster, network, nodeSubnetName, floatSubnetName)
+        }.get()
     }
 
 }
 
-
 data class Clusters(
     val nodeCluster: KubernetesCluster,
     val floatCluster: KubernetesCluster,
-    val clusterNetwork: Network,
+    val clusterNetwork: ClusterNetwork,
     val nodeSubnetName: String,
     val floatSubnetName: String
 ) {
@@ -258,9 +282,6 @@ private fun KubernetesCluster.DefinitionStages.WithNetworkProfile.defineLoadBala
 
     }
 }
-
-
-@ExperimentalUnsignedTypes
 
 
 inline fun <T : Any?> allowAllFailures(block: () -> T): T? {

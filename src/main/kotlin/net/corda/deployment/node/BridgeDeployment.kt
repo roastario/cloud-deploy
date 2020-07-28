@@ -51,7 +51,8 @@ fun createBridgeDeployment(
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-firewall")
         .withEnv(
-            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -Xmx800M").build(),
+            V1EnvVarBuilder().withName("JVM_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
+            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
             V1EnvVarBuilder().withName("CONFIG_FILE").withValue(BridgeConfigParams.BRIDGE_CONFIG_PATH).build(),
             V1EnvVarBuilder().withName("BASE_DIR").withValue(BridgeConfigParams.BRIDGE_BASE_DIR).build(),
             //TUNNEL SECRETS
@@ -124,31 +125,11 @@ fun createBridgeDeployment(
         .endContainer()
         .withVolumes(
             listOfNotNull(
-                azureFileMount(
-                    configDirMountName,
-                    bridgeConfigShare,
-                    true
-                ),
-                azureFileMount(
-                    tunnelStoresDirMountName,
-                    tunnelStoresShare,
-                    true
-                ),
-                azureFileMount(
-                    networkParametersMountName,
-                    networkParametersShare,
-                    true
-                ),
-                azureFileMount(
-                    artemisStoresDirMountName,
-                    artemisStoresShare,
-                    true
-                ),
-                azureFileMount(
-                    localStoresDirMountName,
-                    bridgeStoresShare,
-                    true
-                )
+                bridgeConfigShare.toK8sMount(configDirMountName, true),
+                tunnelStoresShare.toK8sMount(tunnelStoresDirMountName, true),
+                networkParametersShare.toK8sMount(networkParametersMountName, true),
+                artemisStoresShare.toK8sMount(artemisStoresDirMountName, true),
+                bridgeStoresShare.toK8sMount(localStoresDirMountName, true)
             )
         )
         .withNewSecurityContext()

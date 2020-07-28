@@ -49,7 +49,7 @@ fun createNodeDeployment(
         .withNewSpec()
         .addNewContainer()
         .withName("node-$runId")
-        .withImage("entdocker.software.r3.com/corda-enterprise-alpine-zulu-java1.8-4.6-snapshot:latest")
+        .withImage("corda/corda-enterprise-java-zulu1.8-4.6-snapshot:latest")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-corda")
         .withEnv(

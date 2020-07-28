@@ -16,7 +16,7 @@ fun createArtemisDeployment(
     runId: String
 ): V1Deployment {
     val dataMountName = "artemis-data"
-    val brokerBaseDirShare = "artemis-config"
+    val brokerBaseDirMountName = "artemis-config"
     val storesMountName = "artemis-stores"
     val artemisDeployment = V1DeploymentBuilder()
         .withKind("Deployment")
@@ -63,7 +63,7 @@ fun createArtemisDeployment(
                         .withMountPath(ArtemisConfigParams.ARTEMIS_DATA_DIR_PATH).build()
                 },
                 V1VolumeMountBuilder()
-                    .withName(brokerBaseDirShare)
+                    .withName(brokerBaseDirMountName)
                     .withMountPath(ArtemisConfigParams.ARTEMIS_BROKER_BASE_DIR).build(),
                 V1VolumeMountBuilder()
                     .withName(storesMountName)
@@ -73,8 +73,8 @@ fun createArtemisDeployment(
         .endContainer()
         .withVolumes(
             listOfNotNull(
-                azureFileMount(brokerBaseDirShare, configuredArtemisBroker.baseDir, false),
-                azureFileMount(storesMountName, storesShare.outputDir, true),
+                configuredArtemisBroker.baseDir.toK8sMount(brokerBaseDirMountName, false),
+                storesShare.outputDir.toK8sMount(storesMountName, true),
                 dataDisk?.let {
                     V1VolumeBuilder()
                         .withNewAzureDisk()

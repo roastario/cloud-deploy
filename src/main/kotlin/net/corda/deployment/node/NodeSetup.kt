@@ -169,7 +169,7 @@ class NodeSetup(
             networkParamsDir
         )
 
-        simpleApply.create(initialRegistrationJob, namespace)
+        simpleApply.create(initialRegistrationJob, namespace, api)
         waitForJob(initialRegistrationJob, namespace, api)
         dumpLogsForJob(initialRegistrationJob, api)
 
