@@ -38,7 +38,7 @@ fun createArtemisDeployment(
         .withNewSpec()
         .addNewContainer()
         .withName("artemis-$runId")
-        .withImage("corda/setup:latest")
+        .withImage("corda/enterprise-setup:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-artemis")
         .withEnv(V1EnvVarBuilder().withName("JAVA_ARGS").withValue("-XX:+UseParallelGC -Xms512M -Xmx768M").build())

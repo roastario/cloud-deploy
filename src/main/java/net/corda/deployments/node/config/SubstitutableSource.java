@@ -22,17 +22,13 @@ public interface SubstitutableSource {
         String targetConfig();
     }
 
-    static String toEnvVarString(String toTransform){
-        return "${" + toTransform + "}";
-    }
-
     default Map<String, String> toSubstitutionMap() {
         try {
             Class<? extends SubstitutableSource> ourClass = this.getClass();
             return Arrays.stream(Introspector.getBeanInfo(ourClass).getPropertyDescriptors())
                     .map(input -> Internal.getKeyValue(input, this))
                     .filter(input -> !Internal.objectProperties.contains(input.getFirst()))
-                    .collect(Collectors.toMap(Pair<String, String>::getFirst, Pair<String, String>::getSecond));
+                    .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
         } catch (IntrospectionException e) {
             throw new RuntimeException(e);
         }
@@ -40,7 +36,7 @@ public interface SubstitutableSource {
 
 
     class Internal {
-        static BeanInfo objectBeanInfo;
+        private static BeanInfo objectBeanInfo;
 
         static {
             try {
@@ -50,13 +46,13 @@ public interface SubstitutableSource {
             }
         }
 
-        static Set<String> objectProperties = Arrays.stream(objectBeanInfo.getPropertyDescriptors()).map(FeatureDescriptor::getName)
+        private static Set<String> objectProperties = Arrays.stream(objectBeanInfo.getPropertyDescriptors()).map(FeatureDescriptor::getName)
                 .collect(Collectors.toSet());
 
         private static Pair<String, String> getKeyValue(PropertyDescriptor propertyDescriptor, Object object) {
             try {
                 Optional<Object> value = Optional.ofNullable(propertyDescriptor.getReadMethod().invoke(object));
-                return new Pair<String, String>(propertyDescriptor.getName(), value.orElse("null").toString());
+                return new Pair<>(propertyDescriptor.getName(), value.orElse("null").toString());
             } catch (IllegalAccessException | InvocationTargetException e) {
                 throw new RuntimeException(e);
             }

@@ -47,12 +47,11 @@ fun createBridgeDeployment(
         .withNewSpec()
         .addNewContainer()
         .withName("float-$runId")
-        .withImage("corda/firewall:latest")
+        .withImage("corda/enterprise-firewall:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-firewall")
         .withEnv(
-            V1EnvVarBuilder().withName("JVM_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
-            V1EnvVarBuilder().withName("JAVA_CAPSULE_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90").build(),
+            V1EnvVarBuilder().withName("JVM_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=80").build(),
             V1EnvVarBuilder().withName("CONFIG_FILE").withValue(BridgeConfigParams.BRIDGE_CONFIG_PATH).build(),
             V1EnvVarBuilder().withName("BASE_DIR").withValue(BridgeConfigParams.BRIDGE_BASE_DIR).build(),
             //TUNNEL SECRETS

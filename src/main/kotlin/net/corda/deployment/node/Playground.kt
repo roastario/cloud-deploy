@@ -43,7 +43,8 @@ fun main(args: Array<String>) {
     val networkMapURL = "http://networkservices:8080"
     val rpcUsername = "u"
     val rpcPassword = "p"
-    val dbParams = H2_DB
+    val dbParams = infrastructure.database.toNodeDbParams()
+
 
     val namespaceYaml = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/namespace.yaml").reader())
     val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())

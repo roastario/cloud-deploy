@@ -84,7 +84,7 @@ fun baseSetupJobBuilder(
         .withNewSpec()
         .addNewContainer()
         .withName(jobName)
-        .withImage("corda/setup:latest")
+        .withImage("corda/enterprise-setup:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand(command)
 }
