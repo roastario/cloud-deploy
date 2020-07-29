@@ -14,7 +14,8 @@ fun initialRegistrationJob(
     artemisSecrets: ArtemisSecrets,
     nodeStoresSecrets: NodeStoresSecrets,
     initialRegistrationDir: AzureFilesDirectory,
-    networkParamsDir: AzureFilesDirectory
+    networkParamsDir: AzureFilesDirectory,
+    trustRootConfig: TrustRootConfig
 ): V1Job {
     val hsmConfigDirMountName = "azurehsmcredentialsdir"
     val nodeConfigDirMountName = "azurecordaconfigdir"
@@ -37,75 +38,79 @@ fun initialRegistrationJob(
         )
         .withImagePullPolicy("IfNotPresent")
         .withEnv(
-            keyValueEnvVar(
-                "TRUST_ROOT_DOWNLOAD_URL",
-                "http://networkservices:8080/truststore"
-            ),
-            keyValueEnvVar(
-                "TRUST_ROOT_PATH",
-                NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH
-            ),
-            keyValueEnvVar("NETWORK_TRUSTSTORE_PASSWORD", "trustpass"),
-            keyValueEnvVar(
-                "BASE_DIR",
-                NodeConfigParams.NODE_BASE_DIR
-            ),
-            keyValueEnvVar(
-                "CONFIG_FILE_PATH",
-                NodeConfigParams.NODE_CONFIG_PATH
-            ),
-            keyValueEnvVar(
-                "CERTIFICATE_SAVE_FOLDER",
-                NodeConfigParams.NODE_CERTIFICATES_DIR
-            ),
-            keyValueEnvVar(
-                "NETWORK_PARAMETERS_SAVE_FOLDER",
-                NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR
-            ),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
-                keyVaultSecrets.credentialPasswordsSecretName,
-                keyVaultSecrets.azKeyVaultCredentialsFilePasswordKey
-            ),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
-                keyVaultSecrets.credentialPasswordsSecretName,
-                keyVaultSecrets.azKeyVaultCredentialsClientIdKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_URL_ENV_VAR_NAME,
-                databaseSecrets.secretName,
-                databaseSecrets.nodeDataSourceURLKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME,
-                databaseSecrets.secretName,
-                databaseSecrets.nodeDataSourceUsernameKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME,
-                databaseSecrets.secretName,
-                databaseSecrets.nodeDatasourcePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecrets.secretName,
-                artemisSecrets.trustStorePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecrets.secretName,
-                artemisSecrets.keyStorePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecrets.secretName,
-                nodeStoresSecrets.nodeKeyStorePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecrets.secretName,
-                nodeStoresSecrets.sharedTrustStorePasswordKey
+            listOfNotNull(
+                trustRootConfig.trustRootSourceURL?.let { trustRootURL ->
+                    keyValueEnvVar(
+                        "TRUST_ROOT_DOWNLOAD_URL",
+                        trustRootURL
+                    )
+                },
+                keyValueEnvVar(
+                    "TRUST_ROOT_PATH",
+                    NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH
+                ),
+                keyValueEnvVar("NETWORK_TRUSTSTORE_PASSWORD", trustRootConfig.trustRootPassword),
+                keyValueEnvVar(
+                    "BASE_DIR",
+                    NodeConfigParams.NODE_BASE_DIR
+                ),
+                keyValueEnvVar(
+                    "CONFIG_FILE_PATH",
+                    NodeConfigParams.NODE_CONFIG_PATH
+                ),
+                keyValueEnvVar(
+                    "CERTIFICATE_SAVE_FOLDER",
+                    NodeConfigParams.NODE_CERTIFICATES_DIR
+                ),
+                keyValueEnvVar(
+                    "NETWORK_PARAMETERS_SAVE_FOLDER",
+                    NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR
+                ),
+                secretEnvVar(
+                    AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
+                    keyVaultSecrets.credentialPasswordsSecretName,
+                    keyVaultSecrets.azKeyVaultCredentialsFilePasswordKey
+                ),
+                secretEnvVar(
+                    AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
+                    keyVaultSecrets.credentialPasswordsSecretName,
+                    keyVaultSecrets.azKeyVaultCredentialsClientIdKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_DATASOURCE_URL_ENV_VAR_NAME,
+                    databaseSecrets.secretName,
+                    databaseSecrets.nodeDataSourceURLKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME,
+                    databaseSecrets.secretName,
+                    databaseSecrets.nodeDataSourceUsernameKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME,
+                    databaseSecrets.secretName,
+                    databaseSecrets.nodeDatasourcePasswordKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                    artemisSecrets.secretName,
+                    artemisSecrets.trustStorePasswordKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
+                    artemisSecrets.secretName,
+                    artemisSecrets.keyStorePasswordKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
+                    nodeStoresSecrets.secretName,
+                    nodeStoresSecrets.nodeKeyStorePasswordKey
+                ),
+                secretEnvVar(
+                    NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
+                    nodeStoresSecrets.secretName,
+                    nodeStoresSecrets.sharedTrustStorePasswordKey
+                )
             )
         )
         .endContainer()
@@ -134,134 +139,9 @@ fun initialRegistrationJob(
         .build()
 }
 
-fun initialRegistrationJob(
-    jobName: String,
-    nodeConfigSecretsName: String,
-    credentialsSecretName: String,
-    p12FileSecretName: String,
-    azKeyVaultCredentialsFilePasswordKey: String,
-    azKeyVaultCredentialsClientIdKey: String,
-    nodeDatasourceSecretName: String,
-    nodeDatasourceURLSecretKey: String,
-    nodeDatasourceUsernameSecretKey: String,
-    nodeDatasourcePasswordSecretyKey: String,
-    artemisSecrets: ArtemisSecrets,
-    nodeStoresSecretName: String,
-    nodeKeyStorePasswordSecretKey: String,
-    nodeTrustStorePasswordSecretKey: String,
-    certificatesShare: AzureFilesDirectory,
-    networkParametersShare: AzureFilesDirectory
-): V1Job {
-    val p12FileFolderMountName = "azurehsmcredentialsdir"
-    val configFilesFolderMountName = "azurecordaconfigdir"
-    val certificatesFolderMountName = "azurecordacertificatesdir"
-    val networkFolderMountName = "networkdir"
-    return baseSetupJobBuilder(jobName, listOf("perform-registration"))
-        .withVolumeMounts(
-            V1VolumeMountBuilder()
-                .withName(p12FileFolderMountName)
-                .withMountPath(AzureKeyVaultConfigParams.CREDENTIALS_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(configFilesFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_CONFIG_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(certificatesFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_CERTIFICATES_DIR).build(),
-            V1VolumeMountBuilder()
-                .withName(networkFolderMountName)
-                .withMountPath(NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR).build()
-        )
-        .withImagePullPolicy("IfNotPresent")
-        .withEnv(
-            keyValueEnvVar(
-                "TRUST_ROOT_DOWNLOAD_URL",
-                "http://networkservices:8080/truststore"
-            ),
-            keyValueEnvVar(
-                "TRUST_ROOT_PATH",
-                NodeConfigParams.NODE_NETWORK_TRUST_ROOT_PATH
-            ),
-            keyValueEnvVar("NETWORK_TRUSTSTORE_PASSWORD", "trustpass"),
-            keyValueEnvVar(
-                "BASE_DIR",
-                NodeConfigParams.NODE_BASE_DIR
-            ),
-            keyValueEnvVar(
-                "CONFIG_FILE_PATH",
-                NodeConfigParams.NODE_CONFIG_PATH
-            ),
-            keyValueEnvVar(
-                "CERTIFICATE_SAVE_FOLDER",
-                NodeConfigParams.NODE_CERTIFICATES_DIR
-            ),
-            keyValueEnvVar(
-                "NETWORK_PARAMETERS_SAVE_FOLDER",
-                NodeConfigParams.NODE_NETWORK_PARAMETERS_SETUP_DIR
-            ),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
-                credentialsSecretName,
-                azKeyVaultCredentialsFilePasswordKey
-            ),
-            secretEnvVar(
-                AzureKeyVaultConfigParams.KEY_VAULT_CLIENT_ID_ENV_VAR_NAME,
-                credentialsSecretName,
-                azKeyVaultCredentialsClientIdKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_URL_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourceURLSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_USERNAME_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourceUsernameSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_DATASOURCE_PASSWORD_ENV_VAR_NAME,
-                nodeDatasourceSecretName,
-                nodeDatasourcePasswordSecretyKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecrets.secretName,
-                artemisSecrets.trustStorePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_ARTEMIS_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                artemisSecrets.secretName,
-                artemisSecrets.keyStorePasswordKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_SSL_KEYSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecretName,
-                nodeKeyStorePasswordSecretKey
-            ),
-            secretEnvVar(
-                NodeConfigParams.NODE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME,
-                nodeStoresSecretName,
-                nodeTrustStorePasswordSecretKey
-            )
-        )
-        .endContainer()
-        .withVolumes(
-            secretVolumeWithAll(p12FileFolderMountName, p12FileSecretName),
-            secretVolumeWithAll(configFilesFolderMountName, nodeConfigSecretsName),
-            azureFileMount(
-                certificatesFolderMountName,
-                certificatesShare,
-                false
-            ),
-            azureFileMount(
-                networkFolderMountName,
-                networkParametersShare,
-                false
-            )
-        )
-        .withRestartPolicy("Never")
-        .endSpec()
-        .endTemplate()
-        .endSpec()
-        .build()
+data class TrustRootConfig(
+    val trustRootSourceURL: String? = null,
+    val trustRootPassword: String
+) {
+
 }

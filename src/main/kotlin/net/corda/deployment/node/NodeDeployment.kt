@@ -18,6 +18,7 @@ fun createNodeDeployment(
     certificatesDirShare: AzureFilesDirectory,
     configDirShare: AzureFilesDirectory,
     driversShareDir: AzureFilesDirectory,
+    cordappsDirShare: AzureFilesDirectory,
     artemisSecrets: ArtemisSecrets,
     nodeStoresSecrets: NodeStoresSecrets,
     keyVaultSecrets: KeyVaultSecrets,
@@ -28,6 +29,7 @@ fun createNodeDeployment(
     val nodeCertificatesDirMountName = "azurecordacertificatesdir"
     val artemisDirMountName = "artemisstoresdir"
     val nodeDriversDirMountName = "driversdir"
+    val nodeCordappsDirMountName = "cordappsdir"
 
     return V1DeploymentBuilder()
         .withKind("Deployment")
@@ -53,6 +55,11 @@ fun createNodeDeployment(
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-corda")
         .withEnv(
+            keyValueEnvVar("CORDA_ARGS", "--verbose"),
+            keyValueEnvVar(
+                "JVM_ARGS",
+                "-Xms512M -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=80"
+            ),
             licenceAcceptEnvVar(),
             secretEnvVar(
                 AzureKeyVaultConfigParams.KEY_VAULT_CERTIFICATES_PASSWORD_ENV_VAR_NAME,
@@ -128,7 +135,10 @@ fun createNodeDeployment(
                 .withMountPath(NodeConfigParams.NODE_ARTEMIS_STORES_DIR).build(),
             V1VolumeMountBuilder()
                 .withName(nodeDriversDirMountName)
-                .withMountPath(NodeConfigParams.NODE_DRIVERS_DIR).build()
+                .withMountPath(NodeConfigParams.NODE_DRIVERS_DIR).build(),
+            V1VolumeMountBuilder()
+                .withName(nodeCordappsDirMountName)
+                .withMountPath(NodeConfigParams.NODE_CORDAPPS_DIR).build()
         )
         .endContainer()
         .withVolumes(
@@ -148,7 +158,8 @@ fun createNodeDeployment(
                 artemisDirShare,
                 true
             ),
-            azureFileMount(nodeDriversDirMountName, driversShareDir, true)
+            azureFileMount(nodeDriversDirMountName, driversShareDir, true),
+            cordappsDirShare.toK8sMount(nodeCordappsDirMountName, false)
         )
         .withNewSecurityContext()
         //corda is 1000

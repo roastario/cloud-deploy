@@ -3,6 +3,7 @@ package net.corda.deployment.node
 import com.azure.storage.file.share.ShareFileClient
 import io.kubernetes.client.openapi.ApiClient
 import net.corda.deployment.node.kubernetes.SecretCreator
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.enforceExistence
@@ -74,7 +75,7 @@ class FirewallSetup(
 
         simpleApply.create(generateTunnelStoresJob, namespace, api)
         waitForJob(generateTunnelStoresJob, namespace, api)
-        dumpLogsForJob(generateTunnelStoresJob, api)
+        dumpLogsForJob(generateTunnelStoresJob, namespace, api)
 
         return GeneratedTunnelStores(tunnelStoresShare).also {
             this.tunnelStores = it

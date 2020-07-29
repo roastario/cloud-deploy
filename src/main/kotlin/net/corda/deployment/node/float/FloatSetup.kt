@@ -5,6 +5,7 @@ import io.kubernetes.client.openapi.models.V1Deployment
 import io.kubernetes.client.openapi.models.V1Service
 import net.corda.deployment.node.*
 import net.corda.deployment.node.config.ConfigGenerators
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.uploadFromByteArray

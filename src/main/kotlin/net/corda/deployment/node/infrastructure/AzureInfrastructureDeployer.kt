@@ -2,7 +2,10 @@ package net.corda.deployment.node.infrastructure
 
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.resources.ResourceGroup
+import net.corda.deployment.node.ArtemisSetup
+import net.corda.deployment.node.HsmType
 import net.corda.deployment.node.KeyVaultSetup
+import net.corda.deployment.node.NodeSetup
 import net.corda.deployment.node.database.SqlServerAndCredentials
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.float.AzureFloatSetup
@@ -59,12 +62,23 @@ class AzureInfrastructureDeployer(
         private val resourceGroup: ResourceGroup,
         private val runSuffix: String
     ) {
+
+        private val shareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
+
         fun internalShareCreator(namespace: String): AzureFileShareCreator {
-            return AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.nonDmzApiSource())
+            return synchronized(shareCreators) {
+                shareCreators.computeIfAbsent("internal-$namespace") {
+                    AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.nonDmzApiSource())
+                }
+            }
         }
 
         fun dmzShareCreator(namespace: String): AzureFileShareCreator {
-            return AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.dmzApiSource())
+            return synchronized(shareCreators) {
+                shareCreators.computeIfAbsent("dmz-$namespace") {
+                    AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.dmzApiSource())
+                }
+            }
         }
 
         fun keyVaultSetup(namespace: String): KeyVaultSetup {
@@ -84,6 +98,21 @@ class AzureInfrastructureDeployer(
 
         fun p2pAddress(): String {
             return clusters.clusterNetwork.p2pAddress.ipAddress()
+        }
+
+        fun artemisSetup(namespace: String): ArtemisSetup {
+            return ArtemisSetup(azure, resourceGroup, internalShareCreator(namespace), namespace, runSuffix, clusters.nonDmzApiSource())
+        }
+
+        fun nodeSetup(namespace: String): NodeSetup {
+            return NodeSetup(
+                internalShareCreator(namespace),
+                database.toNodeDbParams(),
+                namespace,
+                clusters.nonDmzApiSource(),
+                runSuffix,
+                HsmType.AZURE
+            )
         }
     }
 

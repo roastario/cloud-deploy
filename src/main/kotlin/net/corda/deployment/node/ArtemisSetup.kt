@@ -9,6 +9,7 @@ import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.models.V1Deployment
 import io.kubernetes.client.openapi.models.V1Service
 import net.corda.deployment.node.kubernetes.SecretCreator
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.enforceExistence
@@ -21,7 +22,8 @@ class ArtemisSetup(
     private val resourceGroup: ResourceGroup,
     private val shareCreator: AzureFileShareCreator,
     private val namespace: String,
-    private val randomSuffix: String
+    private val randomSuffix: String,
+    private val apiSource: () -> ApiClient
 ) {
 
     private var configuredBroker: ConfiguredArtemisBroker? = null
@@ -38,7 +40,7 @@ class ArtemisSetup(
             .create()
     }
 
-    fun generateArtemisSecrets(api: () -> ApiClient): ArtemisSecrets {
+    fun generateArtemisSecrets(): ArtemisSecrets {
         val artemisSecretsName = "artemis-secrets-${randomSuffix}"
         val artemisStorePassSecretKey = "artemisstorepass"
         val artemisTrustPassSecretKey = "artemistrustpass"
@@ -50,7 +52,7 @@ class ArtemisSetup(
                 artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
                 artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
             ).toMap()
-            , namespace, api
+            , namespace, apiSource
         )
 
         secrets = ArtemisSecrets(
@@ -62,26 +64,22 @@ class ArtemisSetup(
         return secrets as ArtemisSecrets
     }
 
-    fun generateArtemisStores(
-        api: () -> ApiClient
-    ): GeneratedArtemisStores {
+    fun generateArtemisStores(): GeneratedArtemisStores {
         if (secrets == null) {
             throw IllegalStateException("Must generate artemis secrets before generating stores")
         }
         val workingDir = shareCreator.createDirectoryFor("artemis-stores")
         val jobName = "generate-artemis-stores-$randomSuffix"
         val generateArtemisStoresJob = generateArtemisStoresJob(jobName, secrets!!, workingDir)
-        simpleApply.create(generateArtemisStoresJob, namespace, api)
-        waitForJob(generateArtemisStoresJob, namespace, api)
-        dumpLogsForJob(generateArtemisStoresJob, api)
+        simpleApply.create(generateArtemisStoresJob, namespace, apiSource)
+        waitForJob(generateArtemisStoresJob, namespace, apiSource)
+        dumpLogsForJob(generateArtemisStoresJob, namespace, apiSource)
         return GeneratedArtemisStores(workingDir).also {
             this.generatedStores = it
         }
     }
 
-    fun configureArtemisBroker(
-        api: () -> ApiClient
-    ): ConfiguredArtemisBroker {
+    fun configureArtemisBroker(): ConfiguredArtemisBroker {
         if (generatedStores == null) {
             throw IllegalStateException("Must generate artemis stores before configuring broker")
         }
@@ -93,16 +91,15 @@ class ArtemisSetup(
             generatedStores!!,
             workingDirShare
         )
-        simpleApply.create(configureArtemisJob, namespace, api)
-        waitForJob(configureArtemisJob, namespace, api)
-        dumpLogsForJob(configureArtemisJob, api)
+        simpleApply.create(configureArtemisJob, namespace, apiSource)
+        waitForJob(configureArtemisJob, namespace, apiSource)
+        dumpLogsForJob(configureArtemisJob, namespace, apiSource)
         return ConfiguredArtemisBroker(workingDirShare).also {
             this.configuredBroker = it
         }
     }
 
     fun deploy(
-        api: () -> ApiClient,
         useAzureDiskForData: Boolean = false
     ): ArtemisDeployment {
         if (configuredBroker == null) {
@@ -115,8 +112,8 @@ class ArtemisSetup(
         }
         val deployment = createArtemisDeployment(namespace, configuredBroker!!, generatedStores!!, disk, randomSuffix)
         val service = createArtemisService(deployment)
-        simpleApply.create(deployment, namespace, api)
-        simpleApply.create(service, namespace, api)
+        simpleApply.create(deployment, namespace, apiSource)
+        simpleApply.create(service, namespace, apiSource)
         return ArtemisDeployment(deployment, service)
     }
 }

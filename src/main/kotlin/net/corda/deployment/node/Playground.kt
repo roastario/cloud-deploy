@@ -1,58 +1,122 @@
+@file:JvmName(name = "Playgound")
+
 package net.corda.deployment.node
 
 import com.azure.storage.file.share.ShareFileClient
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.parameters.options.multiple
+import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.options.required
+import com.github.ajalt.clikt.parameters.options.transformAll
+import com.github.ajalt.clikt.parameters.types.file
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
+import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
-import io.kubernetes.client.util.Yaml
-import net.corda.deployment.node.database.H2_DB
+import freighter.utils.GradleUtils
+import io.kubernetes.client.openapi.apis.CoreV1Api
+import io.kubernetes.client.openapi.models.V1NamespaceBuilder
 import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.uploadFromByteArray
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.io.File
 import java.security.Security
 import java.time.Duration
 import kotlin.system.exitProcess
 
+class InitialSetupCommand : CliktCommand() {
 
-@ExperimentalUnsignedTypes
-fun main(args: Array<String>) {
+    val subscriptionId: String by option("-s", "--subscription", help = "Azure Subscription").required()
+    val resourceGroupName: String by option("-g", "--resource-group", help = "Azure Resource Group to use").required()
+    val resourceGroupRegion: String by option("-r", "--region", help = "Azure region to create resources within").required()
+    val x500Name: String by option("-x", "--x500", help = "X500 Name to use for node").required()
+    val email: String by option("-e", "--email", help = "email address to use when registering the node").required()
+    val doormanURL: String by option("-d", "--doorman", help = "the doorman address to use when registering the node").required()
+    val networkMapURL: String by option("-n", "--network-map", help = "the networkmap to use when registering the node").required()
+    val trustRootURL: String? by option("-t", "--trust-root-url", help = "the url to download the network-trust-root from")
+    val trustRootFile: File? by option("-f", "--trust-root-f", help = "the path to load the network-trust-root from").file()
+    val trustRootPassword: String by option("-p", "--trust-root-password", help = "the password for the network-trust-root").required()
 
-    val bouncyCastleProvider = BouncyCastleProvider()
-    Security.addProvider(bouncyCastleProvider)
+    val cordapps: List<File> by option("-c", "--cordapp", help = "Path to cordapp to load into the node").file(
+        mustExist = true,
+        canBeDir = false
+    ).multiple()
 
+    val gradleCordapps: List<File> by option(
+        "--gradle-cordapp",
+        help = "the gradle coordinates of a cordapp to load into the node <group>:<artifact>:<version>"
+    ).transformAll { gradleCords ->
+        gradleCords.flatMap { gradleCord ->
+            val (group, artifact, version) = gradleCord.split(":")
+            GradleUtils.getArtifactAndDependencies(group, artifact, version).map { it.toFile() }
+        }
+    }
+
+    override fun run() {
+        performDeployment(
+            subscriptionId,
+            resourceGroupName,
+            resourceGroupRegion,
+            x500Name,
+            email,
+            doormanURL,
+            networkMapURL,
+            trustRootURL,
+            trustRootFile,
+            trustRootPassword,
+            cordapps,
+            gradleCordapps
+        )
+    }
+}
+
+fun performDeployment(
+    subscriptionId: String,
+    resourceGroupName: String,
+    region: String,
+    x500Name: String,
+    email: String,
+    doormanURL: String,
+    networkMapURL: String,
+    trustRootURL: String?,
+    trustRootFile: File?,
+    trustRootPassword: String,
+    diskCordapps: List<File>,
+    gradleCordapps: List<File>
+) {
     val mngAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
         .authenticate(AzureCliCredentials.create())
-        .withSubscription("c412941a-4362-4923-8737-3d33a8d1cdc6")
+        .withSubscription(subscriptionId)
 
-    val resourceGroup = mngAzure.resourceGroups().getByName("stefano-playground")
+    val resourceGroup =
+        mngAzure.resourceGroups().getByName(resourceGroupName) ?: mngAzure.resourceGroups().define(resourceGroupName).withRegion(
+            Region.fromName(region)
+        ).create()
 
-    val randSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
-    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, randSuffix)
+    val runSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
+    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, runSuffix)
     val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
-    val namespace = "testingzone"
-    val dmzShareCreator: AzureFileShareCreator = infrastructure.dmzShareCreator(namespace)
+    val namespace = "corda-zone"
     val nonDmzShareCreator: AzureFileShareCreator = infrastructure.internalShareCreator(namespace)
+    val trustRootConfig = TrustRootConfig(trustRootURL, trustRootPassword)
 
-    val nodeX500 = "O=BigCorporation,L=New York,C=US"
-    val nodeEmail = "stefano.franz@r3.com"
-    val doormanURL = "http://networkservices:8080"
-    val networkMapURL = "http://networkservices:8080"
-    val rpcUsername = "u"
-    val rpcPassword = "p"
-    val dbParams = infrastructure.database.toNodeDbParams()
+    val namespaceToCreate = V1NamespaceBuilder()
+        .withKind("Namespace")
+        .withNewMetadata()
+        .withName(namespace)
+        .endMetadata().build()
 
+    infrastructure.clusters.dmzApiSource().run {
+        CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
+    }
 
-    val namespaceYaml = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/namespace.yaml").reader())
-    val nmsSetup = Yaml.loadAll(Thread.currentThread().contextClassLoader.getResourceAsStream("yaml/dummynms.yaml").reader())
-
-    simpleApply.apply(namespaceYaml, namespace = namespace, apiClient = infrastructure.clusters.nonDmzApiSource())
-    simpleApply.apply(namespaceYaml, namespace = namespace, apiClient = infrastructure.clusters.dmzApiSource())
-    simpleApply.apply(nmsSetup, namespace = namespace, apiClient = infrastructure.clusters.nonDmzApiSource())
-    /// END CONSTANTS ///
+    infrastructure.clusters.nonDmzApiSource().run {
+        CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
+    }
 
     //configure key vault
     val keyVaultSetup = infrastructure.keyVaultSetup(namespace)
@@ -60,32 +124,31 @@ fun main(args: Array<String>) {
     val vaultSecrets = keyVaultSetup.createKeyVaultSecrets(infrastructure.clusters.nonDmzApiSource())
 
     //configure and deploy artemis
-    val artemisSetup = ArtemisSetup(mngAzure, resourceGroup, nonDmzShareCreator, namespace, randSuffix)
-    val artemisSecrets = artemisSetup.generateArtemisSecrets(infrastructure.clusters.nonDmzApiSource())
-    val generatedArtemisStores = artemisSetup.generateArtemisStores(infrastructure.clusters.nonDmzApiSource())
-    val configuredArtemisBroker = artemisSetup.configureArtemisBroker(infrastructure.clusters.nonDmzApiSource())
-    val deployedArtemis = artemisSetup.deploy(infrastructure.clusters.nonDmzApiSource())
-
+    val artemisSetup: ArtemisSetup = infrastructure.artemisSetup(namespace)
+    val artemisSecrets = artemisSetup.generateArtemisSecrets()
+    val generatedArtemisStores = artemisSetup.generateArtemisStores()
+    val configuredArtemisBroker = artemisSetup.configureArtemisBroker()
+    val deployedArtemis = artemisSetup.deploy()
 
     //configure and register the node
-    val nodeSetup = NodeSetup(nonDmzShareCreator, dbParams, namespace, infrastructure.clusters.nonDmzApiSource(), randSuffix)
+    val nodeSetup: NodeSetup = infrastructure.nodeSetup(namespace)
     nodeSetup.generateNodeConfig(
-        nodeX500,
-        nodeEmail,
+        x500Name,
+        email,
         infrastructure.p2pAddress(),
         deployedArtemis.serviceName,
         doormanURL,
         networkMapURL,
-        rpcUsername,
-        rpcPassword
+        "u",
+        "p"
     )
     nodeSetup.uploadNodeConfig()
     nodeSetup.createNodeDatabaseSecrets()
     val nodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
-    val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets)
+    val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
 
     //setup the firewall tunnel
-    val firewallSetup = FirewallSetup(namespace, nonDmzShareCreator, randSuffix)
+    val firewallSetup = FirewallSetup(namespace, nonDmzShareCreator, runSuffix)
     val firewallTunnelSecrets =
         firewallSetup.generateFirewallTunnelSecrets(infrastructure.clusters.nonDmzApiSource(), infrastructure.clusters.dmzApiSource())
     val firewallTunnelStores = firewallSetup.generateTunnelStores(infrastructure.clusters.nonDmzApiSource())
@@ -99,7 +162,7 @@ fun main(args: Array<String>) {
     val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource())
 
     //configure and deploy the bridge
-    val bridgeSetup = BridgeSetup(nonDmzShareCreator, namespace, randSuffix)
+    val bridgeSetup = BridgeSetup(nonDmzShareCreator, namespace, runSuffix)
     bridgeSetup.generateBridgeStoreSecrets(infrastructure.clusters.nonDmzApiSource())
     bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult, infrastructure.clusters.nonDmzApiSource())
     bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
@@ -117,10 +180,19 @@ fun main(args: Array<String>) {
     nodeSetup.copyArtemisStores(generatedArtemisStores)
     nodeSetup.createArtemisSecrets(artemisSecrets)
     nodeSetup.createKeyVaultSecrets(vaultSecrets)
-    nodeSetup.copyToDriversDir(dbParams, HsmType.AZURE)
+    nodeSetup.copyToDriversDir()
+    nodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
     nodeSetup.deploy()
 
     exitProcess(0)
+
+}
+
+@ExperimentalUnsignedTypes
+fun main(args: Array<String>) {
+    val bouncyCastleProvider = BouncyCastleProvider()
+    Security.addProvider(bouncyCastleProvider)
+    InitialSetupCommand().main(args)
 }
 
 fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Duration.ofMinutes(5)) {

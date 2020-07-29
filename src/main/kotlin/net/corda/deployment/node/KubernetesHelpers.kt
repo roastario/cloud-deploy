@@ -139,19 +139,22 @@ fun waitForJob(
     throw TimeoutException("job ${job.metadata?.name} did not complete within expected time")
 }
 
-fun dumpLogsForJob(job: V1Job, clientSource: () -> ApiClient) {
+fun dumpLogsForJob(job: V1Job, namespace: String, clientSource: () -> ApiClient) {
     val client = clientSource()
     val pod = CoreV1Api(client).listNamespacedPod(
-        "testingzone",
+        namespace,
         "true",
         null,
         null,
         null,
         "job-name=${job.metadata?.name}", 10, null, 30, false
-    ).items.first()
-    val logs = PodLogs(client.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
-    val logStream = logs.streamNamespacedPodLog(pod)
-    logStream.use {
-        IOUtils.copy(it, System.out, 128)
+    ).items.firstOrNull()
+
+    pod?.let { discoveredPod ->
+        val logs = PodLogs(client.also { it.httpClient = it.httpClient.newBuilder().readTimeout(0, TimeUnit.SECONDS).build() })
+        val logStream = logs.streamNamespacedPodLog(discoveredPod)
+        logStream.use {
+            IOUtils.copy(it, System.out, 128)
+        }
     }
 }

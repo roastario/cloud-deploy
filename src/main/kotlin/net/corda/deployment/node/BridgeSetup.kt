@@ -3,9 +3,9 @@ package net.corda.deployment.node
 import com.azure.storage.file.share.ShareFileClient
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.models.V1Deployment
-import io.kubernetes.client.openapi.models.V1Service
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.kubernetes.SecretCreator
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.uploadFromByteArray
@@ -73,7 +73,7 @@ class BridgeSetup(
 
         simpleApply.create(importNodeKeyStoreToBridgeJob, namespace, api)
         waitForJob(importNodeKeyStoreToBridgeJob, namespace, api)
-        dumpLogsForJob(importNodeKeyStoreToBridgeJob, api)
+        dumpLogsForJob(importNodeKeyStoreToBridgeJob, namespace, api)
         return BridgeStores(bridgeCertificatesShare).also {
             this.bridgeStores = it
             this.nodeStoreSecrets = nodeStoreSecrets

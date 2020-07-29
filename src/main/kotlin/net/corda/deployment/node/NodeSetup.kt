@@ -7,6 +7,7 @@ import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.database.DatabaseConfigParams
 import net.corda.deployment.node.kubernetes.SecretCreator
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.enforceExistence
@@ -14,6 +15,7 @@ import net.corda.deployment.node.storage.uploadFromByteArray
 import net.corda.deployments.node.config.ArtemisConfigParams
 import net.corda.deployments.node.config.NodeConfigParams
 import org.apache.commons.lang3.RandomStringUtils
+import java.io.File
 import java.nio.file.Files
 
 class NodeSetup(
@@ -21,8 +23,10 @@ class NodeSetup(
     val dbParams: DatabaseConfigParams,
     val namespace: String,
     val api: () -> ApiClient,
-    val randomSuffix: String
+    val randomSuffix: String,
+    val hsm: HsmType
 ) {
+    private lateinit var cordappsDirShare: AzureFilesDirectory
     private lateinit var driversDirShare: AzureFilesDirectory
     private lateinit var vaultSecrets: KeyVaultSecrets
     private lateinit var artemisStoresDir: AzureFilesDirectory
@@ -151,7 +155,8 @@ class NodeSetup(
 
     fun performInitialRegistration(
         keyVaultSecrets: KeyVaultSecrets,
-        artemisSecrets: ArtemisSecrets
+        artemisSecrets: ArtemisSecrets,
+        trustRootConfig: TrustRootConfig
     ): InitialRegistrationResult {
         val jobName = "initial-registration-${randomSuffix}"
 
@@ -166,21 +171,22 @@ class NodeSetup(
             artemisSecrets,
             nodeStoresSecrets!!,
             initialRegResultDir,
-            networkParamsDir
+            networkParamsDir,
+            trustRootConfig
         )
 
         simpleApply.create(initialRegistrationJob, namespace, api)
         waitForJob(initialRegistrationJob, namespace, api)
-        dumpLogsForJob(initialRegistrationJob, api)
+        dumpLogsForJob(initialRegistrationJob, namespace, api)
 
         return InitialRegistrationResult(initialRegResultDir, networkParamsDir).also {
             this.initialRegistrationResult = it
         }
     }
 
-    fun copyToDriversDir(dbParams: DatabaseConfigParams, hsmParams: HsmType) {
+    fun copyToDriversDir() {
         val driversDirShare = shareCreator.createDirectoryFor("node-drivers")
-        val allDriverJars = (hsmParams.requiredDriverJars + dbParams.type.driverDependencies).flatMap {
+        val allDriverJars = (hsm.requiredDriverJars + dbParams.type.driverDependencies).flatMap {
             GradleUtils.getArtifactAndDependencies(it.driverGroup, it.driverArtifact, it.driverVersion)
         }
 
@@ -206,6 +212,7 @@ class NodeSetup(
             initialRegistrationResult!!.certificatesDir,
             configDirectory!!,
             driversDirShare,
+            cordappsDirShare,
             artemisSecrets,
             nodeStoresSecrets!!,
             vaultSecrets,
@@ -213,6 +220,20 @@ class NodeSetup(
         )
         println(Yaml.dump(nodeDeployment))
         simpleApply.create(nodeDeployment, namespace, api)
+    }
+
+    fun copyToCordappsDir(cordapps: List<File>, gradleCordapps: List<File>) {
+        val cordappsDir = shareCreator.createDirectoryFor("node-cordapps")
+
+        cordapps.forEach { cordapp ->
+            println("Uploading cordapp: ${cordapp.absolutePath}")
+            cordappsDir.modernClient.rootDirectoryClient.getFileClient(cordapp.name).also { client ->
+                if (client.exists().not()) {
+                    client.create(Files.size(cordapp.toPath()))
+                }
+            }.uploadFromFile(cordapp.absolutePath)
+        }
+        this.cordappsDirShare = cordappsDir
     }
 
 
