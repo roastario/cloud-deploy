@@ -13,7 +13,7 @@ const val NODE_RPC_PORT_NAME = "node-rpc"
 
 fun createNodeDeployment(
     namespace: String,
-    runId: String,
+    nodeId: String,
     artemisDirShare: AzureFilesDirectory,
     certificatesDirShare: AzureFilesDirectory,
     configDirShare: AzureFilesDirectory,
@@ -36,21 +36,21 @@ fun createNodeDeployment(
         .withApiVersion("apps/v1")
         .withNewMetadata()
         .withNamespace(namespace)
-        .withName("node-${runId}")
+        .withName("node-${nodeId}")
         .withLabels(listOf("dmz" to "false").toMap())
         .endMetadata()
         .withNewSpec()
         .withNewSelector()
-        .withMatchLabels(listOf("run" to "node-$runId").toMap())
+        .withMatchLabels(listOf("run" to "node-$nodeId").toMap())
         .endSelector()
         .withReplicas(1)
         .withNewTemplate()
         .withNewMetadata()
-        .withLabels(listOf("run" to "node-$runId").toMap())
+        .withLabels(listOf("run" to "node-$nodeId").toMap())
         .endMetadata()
         .withNewSpec()
         .addNewContainer()
-        .withName("node-$runId")
+        .withName("node-$nodeId")
         .withImage("corda/corda-enterprise-java-zulu1.8-4.6-snapshot:latest")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-corda")

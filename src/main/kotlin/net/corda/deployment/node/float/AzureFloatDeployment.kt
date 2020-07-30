@@ -11,10 +11,9 @@ import net.corda.deployments.node.config.FloatConfigParams
 class AzureFloatSetup(
     namespace: String,
     shareCreator: AzureFileShareCreator,
-    randSuffix: String,
     val clusterNetwork: ClusterNetwork
 ) :
-    FloatSetup(namespace, shareCreator, randSuffix) {
+    FloatSetup(namespace, shareCreator) {
 
     override fun buildInternalService(deployment: V1Deployment): InternalFloatService {
         val internalLoadBalancerAddress = clusterNetwork.getNextAvailableDMZInternalIP()

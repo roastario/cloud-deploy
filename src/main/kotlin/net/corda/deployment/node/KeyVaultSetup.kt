@@ -1,24 +1,19 @@
 package net.corda.deployment.node
 
-import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.keyvault.Vault
 import com.microsoft.azure.management.resources.ResourceGroup
 import io.kubernetes.client.openapi.ApiClient
 import net.corda.deployment.node.config.ConfigGenerators
-import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.kubernetes.SecretCreator
 import net.corda.deployment.node.principals.PrincipalAndCredentials
-import net.corda.deployment.node.principals.ServicePrincipalCreator
-import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployments.node.config.AzureKeyVaultConfigParams
 
 class KeyVaultSetup(
     val keyVaultAndCredentials: KeyVaultAndCredentials,
-    val mngAzure: Azure,
     val resourceGroup: ResourceGroup,
-    val shareCreator: AzureFileShareCreator,
     val namespace: String,
-    val runId: String
+    val nodeId: String,
+    val api: () -> ApiClient
 ) {
 
     private var keyVaultSecrets: KeyVaultSecrets? = null
@@ -40,13 +35,13 @@ class KeyVaultSetup(
         }
     }
 
-    fun createKeyVaultSecrets(api: () -> ApiClient): KeyVaultSecrets {
+    fun createKeyVaultSecrets(): KeyVaultSecrets {
         if (this.generatedConfig == null) {
             throw IllegalStateException("must generate config before creating secrets")
         }
-        val keyVaultCredentialsSecretName = "az-kv-password-secrets-$runId"
-        val azKeyVaultCredentialsFilePasswordKey = "az-kv-password"
-        val azKeyVaultCredentialsClientIdKey = "az-kv-client-id"
+        val keyVaultCredentialsSecretName = "az-kv-password-secrets-$nodeId"
+        val azKeyVaultCredentialsFilePasswordKey = "az-kv-password-$nodeId"
+        val azKeyVaultCredentialsClientIdKey = "az-kv-client-id-$nodeId"
         SecretCreator.createStringSecret(
             keyVaultCredentialsSecretName,
             listOf(
@@ -56,7 +51,7 @@ class KeyVaultSetup(
             namespace,
             api
         )
-        val credentialsAndConfigSecretName = "keyvault-auth-file-secrets-$runId"
+        val credentialsAndConfigSecretName = "keyvault-auth-file-secrets-$nodeId"
         SecretCreator.createByteArraySecret(
             credentialsAndConfigSecretName,
             listOf(

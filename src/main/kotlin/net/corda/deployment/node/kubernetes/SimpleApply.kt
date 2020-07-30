@@ -1,16 +1,34 @@
 package net.corda.deployment.node.kubernetes
 
+import com.github.michaelbull.retry.ContinueRetrying
+import com.github.michaelbull.retry.StopRetrying
+import com.github.michaelbull.retry.context.retryStatus
+import com.github.michaelbull.retry.policy.RetryPolicy
+import com.github.michaelbull.retry.policy.binaryExponentialBackoff
+import com.github.michaelbull.retry.policy.limitAttempts
+import com.github.michaelbull.retry.policy.plus
+import com.github.michaelbull.retry.retry
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import io.github.classgraph.MethodInfo
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.openapi.models.V1ObjectMeta
+import kotlinx.coroutines.runBlocking
 import java.lang.IllegalStateException
 import java.lang.reflect.InvocationTargetException
 import java.util.*
 import kotlin.collections.HashMap
+import kotlin.coroutines.coroutineContext
 import kotlin.math.max
+
+val kubernetesExceptionAwareRetryPolicy: RetryPolicy<Throwable> = {
+    if (this.reason.cause is ApiException) {
+        StopRetrying
+    } else {
+        ContinueRetrying
+    }
+}
 
 fun parseVersionStringToInt(className: String): Int {
     val versionSuffixRegex = Regex("V(\\d+.*)$")
@@ -111,7 +129,11 @@ val simpleApply = object : SimpleApplier {
                 println("using: ${apiClass.canonicalName}.${method.name} to create an instance of ${classOfObjectToCreate.canonicalName} (name=${metaData?.name})")
                 if (info.namespaced) {
                     try {
-                        method.invoke(apiInstance, namespace, o, "true", null, null)
+                        runBlocking {
+                            retry(kubernetesExceptionAwareRetryPolicy + limitAttempts(10) + binaryExponentialBackoff(500L, 10000L)) {
+                                method.invoke(apiInstance, namespace, o, "true", null, null)
+                            }
+                        }
                     } catch (e: InvocationTargetException) {
                         if (e.cause is ApiException) {
                             System.err.println((e.cause as ApiException).responseBody)
@@ -120,7 +142,11 @@ val simpleApply = object : SimpleApplier {
                     }
                 } else {
                     try {
-                        method.invoke(apiInstance, o, null, null, null)
+                        runBlocking {
+                            retry(kubernetesExceptionAwareRetryPolicy + limitAttempts(10) + binaryExponentialBackoff(500L, 10000L)) {
+                                method.invoke(apiInstance, o, null, null, null)
+                            }
+                        }
                     } catch (e: InvocationTargetException) {
                         if (e.cause is ApiException) {
                             System.err.println((e.cause as ApiException).responseBody)

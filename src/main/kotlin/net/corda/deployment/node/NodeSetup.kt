@@ -23,7 +23,6 @@ class NodeSetup(
     val dbParams: DatabaseConfigParams,
     val namespace: String,
     val api: () -> ApiClient,
-    val randomSuffix: String,
     val nodeId: String,
     val hsm: HsmType
 ) {
@@ -85,10 +84,10 @@ class NodeSetup(
     }
 
     fun createNodeDatabaseSecrets(): NodeDatabaseSecrets {
-        val nodeDatasourceSecretName = "node-datasource-secrets-$randomSuffix"
-        val nodeDatasourceURLSecretKey = "node-datasource-url"
-        val nodeDatasourceUsernameSecretKey = "node-datasource-user"
-        val nodeDatasourcePasswordSecretyKey = "node-datasource-password"
+        val nodeDatasourceSecretName = "node-datasource-secrets-$nodeId"
+        val nodeDatasourceURLSecretKey = "node-datasource-url-$nodeId"
+        val nodeDatasourceUsernameSecretKey = "node-datasource-user-$nodeId"
+        val nodeDatasourcePasswordSecretyKey = "node-datasource-password-$nodeId"
         SecretCreator.createStringSecret(
             nodeDatasourceSecretName,
             listOf(
@@ -112,9 +111,9 @@ class NodeSetup(
 
 
     fun createNodeKeyStoreSecrets(): NodeStoresSecrets {
-        val nodeStoresSecretName = "node-keystores-secrets-$randomSuffix"
-        val nodeKeyStorePasswordSecretKey = "node-ssl-keystore-password"
-        val sharedTrustStorePasswordSecretKey = "shared-truststore-password"
+        val nodeStoresSecretName = "node-keystores-secrets-$nodeId"
+        val nodeKeyStorePasswordSecretKey = "node-ssl-keystore-password-$nodeId"
+        val sharedTrustStorePasswordSecretKey = "shared-truststore-password-$nodeId"
 
         SecretCreator.createStringSecret(
             nodeStoresSecretName,
@@ -141,7 +140,7 @@ class NodeSetup(
 
 
     fun copyArtemisStores(artemisStores: GeneratedArtemisStores) {
-        val nodeArtemisDir = shareCreator.createDirectoryFor("node-artemis-stores")
+        val nodeArtemisDir = shareCreator.createDirectoryFor("node-artemis-stores-${nodeId}")
 
         val nodeArtemisTrustStore =
             nodeArtemisDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
@@ -154,12 +153,12 @@ class NodeSetup(
         this.artemisStoresDir = nodeArtemisDir
     }
 
-    fun performInitialRegistration(
+    suspend fun performInitialRegistration(
         keyVaultSecrets: KeyVaultSecrets,
         artemisSecrets: ArtemisSecrets,
         trustRootConfig: TrustRootConfig
     ): InitialRegistrationResult {
-        val jobName = "initial-registration-${randomSuffix}"
+        val jobName = "initial-registration-${nodeId}"
 
         val initialRegResultDir = shareCreator.createDirectoryFor("node-initial-reg-result")
         val networkParamsDir = shareCreator.createDirectoryFor("network-params-result")
@@ -208,7 +207,7 @@ class NodeSetup(
     fun deploy() {
         val nodeDeployment = createNodeDeployment(
             namespace,
-            randomSuffix,
+            nodeId,
             artemisStoresDir,
             initialRegistrationResult!!.certificatesDir,
             configDirectory!!,

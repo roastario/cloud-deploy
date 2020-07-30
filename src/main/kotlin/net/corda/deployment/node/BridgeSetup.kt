@@ -2,7 +2,9 @@ package net.corda.deployment.node
 
 import com.azure.storage.file.share.ShareFileClient
 import io.kubernetes.client.openapi.ApiClient
+import io.kubernetes.client.openapi.apis.AppsV1Api
 import io.kubernetes.client.openapi.models.V1Deployment
+import io.kubernetes.client.openapi.models.V1EnvVarBuilder
 import net.corda.deployment.node.config.ConfigGenerators
 import net.corda.deployment.node.kubernetes.SecretCreator
 import net.corda.deployment.node.kubernetes.simpleApply
@@ -18,7 +20,7 @@ import org.apache.commons.lang3.RandomStringUtils
 class BridgeSetup(
     val shareCreator: AzureFileShareCreator,
     val namespace: String,
-    val randomSuffix: String
+    val api: () -> ApiClient
 ) {
 
 
@@ -34,8 +36,8 @@ class BridgeSetup(
     private var bridgeStores: BridgeStores? = null
     private var bridgeStoreSecrets: BridgeSecrets? = null
 
-    fun generateBridgeStoreSecrets(api: () -> ApiClient): BridgeSecrets {
-        val bridgeCertificatesSecretName = "bridge-certs-secerts-$randomSuffix"
+    fun generateBridgeStoreSecrets(): BridgeSecrets {
+        val bridgeCertificatesSecretName = "bridge-stores-secrets"
         val bridgeSSLKeyStorePasswordSecretKey = "bridgesslpassword"
         SecretCreator.createStringSecret(
             bridgeCertificatesSecretName,
@@ -51,15 +53,14 @@ class BridgeSetup(
         }
     }
 
-    fun importNodeKeyStoreIntoBridge(
+    suspend fun importNodeKeyStoreIntoBridge(
         nodeStoreSecrets: NodeStoresSecrets,
-        initialRegistrationResult: InitialRegistrationResult,
-        api: () -> ApiClient
+        initialRegistrationResult: InitialRegistrationResult
     ): BridgeStores {
         if (bridgeStoreSecrets == null) {
             throw IllegalStateException("must generate bridge ssl secrets before importing node tls keys")
         }
-        val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${randomSuffix}"
+        val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${RandomStringUtils.randomAlphanumeric(8).toLowerCase()}"
         val bridgeCertificatesShare = shareCreator.createDirectoryFor("bridge-certs")
         val importNodeKeyStoreToBridgeJob = importNodeKeyStoreToBridgeJob(
             importNodeToBridgeJobName,
@@ -181,10 +182,9 @@ class BridgeSetup(
         this.configShare = bridgeConfigShare
     }
 
-    fun deploy(api: () -> ApiClient): BridgeDeployment {
+    fun deploy(): BridgeDeployment {
         val bridgeDeployment = createBridgeDeployment(
             namespace,
-            randomSuffix,
             configShare,
             tunnelComponents?.bridgeTunnelShare!!,
             artemisComponents?.bridgeArtemisStoresShare!!,
@@ -198,10 +198,11 @@ class BridgeSetup(
             nodeStoreSecrets.sharedTrustStorePasswordKey
         )
         simpleApply.create(bridgeDeployment, namespace, api)
-        return BridgeDeployment(bridgeDeployment).also {
+        return BridgeDeployment(bridgeDeployment, namespace).also {
             this.deployment = it
         }
     }
+
 
 }
 
@@ -213,5 +214,26 @@ class BridgeTunnelComponents(val bridgeTunnelShare: AzureFilesDirectory)
 
 class BridgeArtemisComponents(val bridgeArtemisStoresShare: AzureFilesDirectory)
 
-class BridgeDeployment(val deployment: V1Deployment)
+class BridgeDeployment(val deployment: V1Deployment, val namespace: String) {
+    fun restart(api: () -> ApiClient) {
+        val appsApi = AppsV1Api(api())
+
+        val discoveredDeployment = appsApi.listNamespacedDeployment(
+            namespace, null, null, null, null,
+            "run=${this.deployment.metadata?.name}", null, null, null, null
+        ).items.firstOrNull() ?: throw IllegalStateException("Could not find existing bridge - cannot restart")
+
+        val existingEnv = discoveredDeployment.spec?.template?.spec?.containers?.first()?.env!!
+        existingEnv.removeAll { it.name == "RESTART_VAR" }
+        existingEnv.add(V1EnvVarBuilder().withName("RESTART_VAR").withValue(RandomStringUtils.randomAlphanumeric(10)).build())
+        appsApi.replaceNamespacedDeployment(
+            discoveredDeployment.metadata?.name,
+            namespace,
+            discoveredDeployment,
+            null,
+            null,
+            null
+        )
+    }
+}
 

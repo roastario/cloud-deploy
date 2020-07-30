@@ -15,7 +15,6 @@ internal const val FLOAT_INTERNAL_PORT_NAME = "internal-port"
 
 fun createFloatDeployment(
     namespace: String,
-    runId: String,
     floatConfigShare: AzureFilesDirectory,
     tunnelStoresShare: AzureFilesDirectory,
     firewallTunnelSecrets: FirewallTunnelSecrets
@@ -27,21 +26,21 @@ fun createFloatDeployment(
         .withApiVersion("apps/v1")
         .withNewMetadata()
         .withNamespace(namespace)
-        .withName("float-${runId}")
+        .withName("float")
         .withLabels(listOf("dmz" to "true").toMap())
         .endMetadata()
         .withNewSpec()
         .withNewSelector()
-        .withMatchLabels(listOf("run" to "float-$runId").toMap())
+        .withMatchLabels(listOf("run" to "float").toMap())
         .endSelector()
         .withReplicas(1)
         .withNewTemplate()
         .withNewMetadata()
-        .withLabels(listOf("run" to "float-$runId").toMap())
+        .withLabels(listOf("run" to "float").toMap())
         .endMetadata()
         .withNewSpec()
         .addNewContainer()
-        .withName("float-$runId")
+        .withName("float")
         .withImage("corda/enterprise-firewall:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-firewall")

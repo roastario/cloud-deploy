@@ -12,8 +12,7 @@ fun createArtemisDeployment(
     devNamespace: String,
     configuredArtemisBroker: ConfiguredArtemisBroker,
     storesShare: GeneratedArtemisStores,
-    dataDisk: Disk?,
-    runId: String
+    dataDisk: Disk?
 ): V1Deployment {
     val dataMountName = "artemis-data"
     val brokerBaseDirMountName = "artemis-config"
@@ -22,22 +21,22 @@ fun createArtemisDeployment(
         .withKind("Deployment")
         .withApiVersion("apps/v1")
         .withNewMetadata()
-        .withName("artemis-$runId")
+        .withName("artemis")
         .withNamespace(devNamespace)
         .withLabels(listOf("dmz" to "false").toMap())
         .endMetadata()
         .withNewSpec()
         .withNewSelector()
-        .withMatchLabels(listOf("run" to "artemis-$runId").toMap())
+        .withMatchLabels(listOf("run" to "artemis").toMap())
         .endSelector()
         .withReplicas(1)
         .withNewTemplate()
         .withNewMetadata()
-        .withLabels(listOf("run" to "artemis-$runId").toMap())
+        .withLabels(listOf("run" to "artemis").toMap())
         .endMetadata()
         .withNewSpec()
         .addNewContainer()
-        .withName("artemis-$runId")
+        .withName("artemis")
         .withImage("corda/enterprise-setup:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-artemis")
@@ -77,6 +76,7 @@ fun createArtemisDeployment(
                 storesShare.outputDir.toK8sMount(storesMountName, true),
                 dataDisk?.let {
                     V1VolumeBuilder()
+                        .withName(dataMountName)
                         .withNewAzureDisk()
                         .withKind("Managed")
                         .withDiskName(dataDisk.name())

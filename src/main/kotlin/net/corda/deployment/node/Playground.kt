@@ -11,11 +11,14 @@ import com.github.ajalt.clikt.parameters.options.transformAll
 import com.github.ajalt.clikt.parameters.types.file
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
+import com.microsoft.azure.management.postgresql.v2017_12_01.*
+import com.microsoft.azure.management.postgresql.v2017_12_01.implementation.PostgreSQLManager
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
 import freighter.utils.GradleUtils
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1NamespaceBuilder
+import kotlinx.coroutines.runBlocking
 import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
 import net.corda.deployment.node.infrastructure.NodeAzureInfrastructure
@@ -67,24 +70,26 @@ class InitialSetupCommand : CliktCommand(name = "firstNode") {
     }
 
     override fun run() {
-        performDeployment(
-            subscriptionId,
-            resourceGroupName,
-            resourceGroupRegion,
-            x500Name,
-            email,
-            doormanURL,
-            networkMapURL,
-            trustRootURL,
-            trustRootFile,
-            trustRootPassword,
-            cordapps,
-            gradleCordapps
-        )
+        runBlocking {
+            performDeployment(
+                subscriptionId,
+                resourceGroupName,
+                resourceGroupRegion,
+                x500Name,
+                email,
+                doormanURL,
+                networkMapURL,
+                trustRootURL,
+                trustRootFile,
+                trustRootPassword,
+                cordapps,
+                gradleCordapps
+            )
+        }
     }
 }
 
-fun performDeployment(
+suspend fun performDeployment(
     subscriptionId: String,
     resourceGroupName: String,
     region: String,
@@ -103,13 +108,21 @@ fun performDeployment(
         .authenticate(AzureCliCredentials.create())
         .withSubscription(subscriptionId)
 
+    val registration = mngAzure.providers().register("Microsoft.DBforPostgreSQL")
+
+
+    while (mngAzure.providers().getByName("Microsoft.DBforPostgreSQL").registrationState() == "Registering") {
+        println("Waiting for PG DB provider to be registered on subscription")
+        Thread.sleep(1000)
+    }
+
     val resourceGroup =
         mngAzure.resourceGroups().getByName(resourceGroupName) ?: mngAzure.resourceGroups().define(resourceGroupName).withRegion(
             Region.fromName(region)
         ).create()
 
-    val runSuffix = RandomStringUtils.randomAlphanumeric(8).toLowerCase()
-    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, runSuffix)
+
+    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup)
     val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
     val namespace = "corda-zone"
     val trustRootConfig = TrustRootConfig(trustRootURL, trustRootPassword)
@@ -132,14 +145,14 @@ fun performDeployment(
     //configure key vault for node
     val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
     keyVaultSetup.generateKeyVaultCryptoServiceConfig()
-    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets(infrastructure.clusters.nonDmzApiSource())
+    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
 
     //configure and deploy artemis
     val artemisSetup: ArtemisSetup = infrastructure.artemisSetup(namespace)
     val artemisSecrets = artemisSetup.generateArtemisSecrets()
     val generatedArtemisStores = artemisSetup.generateArtemisStores()
     val configuredArtemisBroker = artemisSetup.configureArtemisBroker()
-    val deployedArtemis = artemisSetup.deploy()
+    val deployedArtemis = artemisSetup.deploy(useAzureDiskForData = true)
 
     //configure and register the node
     val nodeSetup: NodeSetup = nodeSpecificInfra.nodeSetup(namespace)
@@ -174,8 +187,8 @@ fun performDeployment(
 
     //configure and deploy the bridge
     val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
-    bridgeSetup.generateBridgeStoreSecrets(infrastructure.clusters.nonDmzApiSource())
-    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult, infrastructure.clusters.nonDmzApiSource())
+    bridgeSetup.generateBridgeStoreSecrets()
+    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult)
     bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
     bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
     bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
@@ -184,7 +197,7 @@ fun performDeployment(
     bridgeSetup.generateBridgeConfig(deployedArtemis.serviceName, floatDeployment.internalService.getInternalAddress())
     bridgeSetup.uploadBridgeConfig()
     bridgeSetup.createArtemisSecrets(artemisSecrets)
-    val bridgeDeployment = bridgeSetup.deploy(infrastructure.clusters.nonDmzApiSource())
+    val bridgeDeployment = bridgeSetup.deploy()
 
     //continue setting up the node
     nodeSetup.copyArtemisStores(generatedArtemisStores)
@@ -194,11 +207,14 @@ fun performDeployment(
     nodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
     nodeSetup.deploy()
 
-    val otherX500 = "O=BigCorporation,L=New York,C=US"
+    //ADD SECOND NODE
+    val otherX500 = "O=BigCorporation2,L=New York,C=US"
     val nextNodeInfra = infrastructure.nodeSpecificInfrastructure(otherX500.shortSha())
 
     val nextNodeKVSetup = nextNodeInfra.keyVaultSetup(namespace)
     val nextNodeSetup = nextNodeInfra.nodeSetup(namespace)
+    nextNodeKVSetup.generateKeyVaultCryptoServiceConfig()
+    val nextNodeKVSecrets = nextNodeKVSetup.createKeyVaultSecrets()
 
     nextNodeSetup.generateNodeConfig(
         otherX500,
@@ -212,8 +228,22 @@ fun performDeployment(
     )
     nextNodeSetup.uploadNodeConfig()
     nextNodeSetup.createNodeDatabaseSecrets()
-    val nextNodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
-    val nextNodeInitialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
+    val nextNodeStoreSecrets = nextNodeSetup.createNodeKeyStoreSecrets()
+    val nextNodeInitialRegistrationResult = nextNodeSetup.performInitialRegistration(nextNodeKVSecrets, artemisSecrets, trustRootConfig)
+    bridgeSetup.importNodeKeyStoreIntoBridge(
+        nextNodeStoreSecrets,
+        nextNodeInitialRegistrationResult
+    )
+
+    //continue setting up the node
+    nextNodeSetup.copyArtemisStores(generatedArtemisStores)
+    nextNodeSetup.createArtemisSecrets(artemisSecrets)
+    nextNodeSetup.createKeyVaultSecrets(nextNodeKVSecrets)
+    nextNodeSetup.copyToDriversDir()
+    nextNodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
+    nextNodeSetup.deploy()
+
+    bridgeDeployment.restart(infrastructure.clusters.nonDmzApiSource())
 
     exitProcess(0)
 

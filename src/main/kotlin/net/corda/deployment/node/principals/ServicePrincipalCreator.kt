@@ -25,15 +25,14 @@ const val VALID_SERVICE_PRINCIPAL_PASSWORD_SYMBOLS = "!£^*()#@.,~"
 
 class ServicePrincipalCreator(
     private val azure: Azure,
-    private val resourceGroup: ResourceGroup,
-    private val runSuffix: String
+    private val resourceGroup: ResourceGroup
 ) {
 
     fun createServicePrincipalAndCredentials(principalId: String, permissionsOnResourceGroup: Boolean): PrincipalAndCredentials {
         val servicePrincipalKeyPair = generateRSAKeyPair()
         val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login, OU=${principalId}")
         val clientSecret = createServicePrincipalPassword(32)
-        val spName = "testingspforaks${principalId}$runSuffix"
+        val spName = "corda${principalId}${RandomStringUtils.randomAlphanumeric(8).toLowerCase()}"
         val createdSP = azure.accessManagement().servicePrincipals().define(spName)
             .withNewApplication("http://${spName}").let {
                 if (permissionsOnResourceGroup) {

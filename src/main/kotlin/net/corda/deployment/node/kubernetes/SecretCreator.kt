@@ -47,7 +47,13 @@ class SecretCreator {
                 .build()
 
             return try {
-                coreV1Api.createNamespacedSecret(namespace, secret, "true", null, null)
+                coreV1Api.createNamespacedSecret(
+                    namespace,
+                    secret,
+                    "true",
+                    null,
+                    null
+                )
             } catch (e: ApiException) {
                 println(e.responseBody)
                 throw e

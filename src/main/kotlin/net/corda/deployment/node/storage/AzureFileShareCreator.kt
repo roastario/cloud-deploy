@@ -23,7 +23,6 @@ import java.util.concurrent.TimeoutException
 class AzureFileShareCreator(
     private val azure: Azure,
     private val resourceGroup: ResourceGroup,
-    private val runSuffix: String,
     private val namespace: String,
     private val api: () -> ApiClient
 ) {
@@ -31,7 +30,7 @@ class AzureFileShareCreator(
     private val instanceSpecificSuffix = RandomStringUtils.randomAlphanumeric(4).toLowerCase()
 
     private val storageAccount = lazy {
-        val storageName = "cordafiles$runSuffix${instanceSpecificSuffix}".toLowerCase()
+        val storageName = "cordafiles${instanceSpecificSuffix}".toLowerCase()
         azure.storageAccounts().getByResourceGroup(resourceGroup.name(), storageName)
             ?: azure.storageAccounts().define(storageName)
                 .withRegion(resourceGroup.region())
@@ -42,7 +41,7 @@ class AzureFileShareCreator(
     }
 
     val secrets = lazy {
-        val azureFilesSecretName = "files-secret-$runSuffix-${instanceSpecificSuffix}"
+        val azureFilesSecretName = "files-secret-${instanceSpecificSuffix}"
         val storageAccountNameKey = "azurestorageaccountname"
         val storageAccountKeyKey = "azurestorageaccountkey"
         SecretCreator.createStringSecret(

@@ -15,20 +15,21 @@ import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.KubeConfig
 import net.corda.deployment.node.networking.ClusterNetwork
 import net.corda.deployment.node.principals.PrincipalAndCredentials
+import org.apache.commons.lang3.RandomStringUtils
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.util.concurrent.CompletableFuture
 
 class KubernetesClusterCreator(
     val azure: Azure,
-    val resourceGroup: ResourceGroup,
-    val runSuffix: String
+    val resourceGroup: ResourceGroup
 ) {
     fun createClusters(
         p2pIpAddress: PublicIPAddress,
         rpcIPAddress: PublicIPAddress,
         servicePrincipal: PrincipalAndCredentials,
-        network: ClusterNetwork
+        network: ClusterNetwork,
+        dnsSuffix: String = RandomStringUtils.randomAlphanumeric(12).toLowerCase()
     ): Clusters {
 
         val createdNetwork = network.createdNetwork
@@ -36,7 +37,7 @@ class KubernetesClusterCreator(
         val nodeSubnetName = network.nodeSubnetName
 
         val floatClusterCreate = azure.kubernetesClusters()
-            .define("test-cluster${runSuffix}-floats")
+            .define("corda-cluster-dmz")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
             .withVersion("1.16.10")
@@ -46,7 +47,7 @@ class KubernetesClusterCreator(
             }.toByteArray()))
             .withServicePrincipalClientId(servicePrincipal.servicePrincipal.applicationId())
             .withServicePrincipalSecret(servicePrincipal.servicePrincipalPassword)
-            .defineAgentPool("floatsonly")
+            .defineAgentPool("dmzpool")
             .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B2MS)
             .withMode(AgentPoolMode.SYSTEM)
             .withOSType(OSType.LINUX)
@@ -56,7 +57,7 @@ class KubernetesClusterCreator(
             .withAutoScale(1, 10)
             .attach()
             .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
-            .withDnsPrefix("test-cluster-stefano-floats-${runSuffix}")
+            .withDnsPrefix("corda-dmz-${dnsSuffix}")
             .defineLoadBalancerAwareNetworkProfile()
             .withLoadBalancerSku(LoadBalancerSku.STANDARD)
             .withLoadBalancerIp(p2pIpAddress)
@@ -69,7 +70,7 @@ class KubernetesClusterCreator(
             .enableRBAC()
 
         val nodeClusterCreate = azure.kubernetesClusters()
-            .define("test-cluster${runSuffix}-nodes")
+            .define("corda-cluster-internal")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
             .withVersion("1.16.10")
@@ -79,7 +80,7 @@ class KubernetesClusterCreator(
             }.toByteArray()))
             .withServicePrincipalClientId(servicePrincipal.servicePrincipal.applicationId())
             .withServicePrincipalSecret(servicePrincipal.servicePrincipalPassword)
-            .defineAgentPool("nofloats")
+            .defineAgentPool("nondmzpool")
             .withVirtualMachineSize(ContainerServiceVMSizeTypes.STANDARD_B4MS)
             .withMode(AgentPoolMode.SYSTEM)
             .withOSType(OSType.LINUX)
@@ -89,7 +90,7 @@ class KubernetesClusterCreator(
             .withAutoScale(1, 10)
             .attach()
             .withSku(ManagedClusterSKU().withName(ManagedClusterSKUName.BASIC).withTier(ManagedClusterSKUTier.PAID))
-            .withDnsPrefix("test-cluster-stefano-nodes-${runSuffix}")
+            .withDnsPrefix("corda-internal-$dnsSuffix")
             .defineLoadBalancerAwareNetworkProfile()
             .withLoadBalancerSku(LoadBalancerSku.STANDARD)
             .withLoadBalancerIp(rpcIPAddress)

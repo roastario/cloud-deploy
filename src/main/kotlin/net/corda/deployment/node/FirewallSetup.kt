@@ -12,8 +12,7 @@ import org.apache.commons.lang3.RandomStringUtils
 
 class FirewallSetup(
     private val namespace: String,
-    private val shareCreator: AzureFileShareCreator,
-    private val randomSuffix: String
+    private val shareCreator: AzureFileShareCreator
 ) {
 
     private var tunnelStores: GeneratedTunnelStores? = null
@@ -23,7 +22,7 @@ class FirewallSetup(
         nonDmzApiSource: () -> ApiClient,
         dmzApiSource: () -> ApiClient
     ): FirewallTunnelSecrets {
-        val tunnelSecretName = "tunnel-store-secrets-$randomSuffix"
+        val tunnelSecretName = "tunnel-store-secrets"
         val tunnelEntryPasswordKey = "tunnelentrypassword"
         val tunnelKeyStorePasswordKey = "tunnelsslkeystorepassword"
         val tunnelTrustStorePasswordKey = "tunneltruststorepassword";
@@ -60,13 +59,13 @@ class FirewallSetup(
         )
     }
 
-    fun generateTunnelStores(api: () -> ApiClient): GeneratedTunnelStores {
+    suspend fun generateTunnelStores(api: () -> ApiClient): GeneratedTunnelStores {
         if (tunnelSecrets == null) {
             throw IllegalStateException("must generate tunnel secrets before generating tunnel stores")
         }
 
         val tunnelStoresShare = shareCreator.createDirectoryFor("tunnel-stores")
-        val generateTunnelStoresJobName = "gen-tunnel-stores-${randomSuffix}"
+        val generateTunnelStoresJobName = "gen-tunnel-stores"
         val generateTunnelStoresJob = generateTunnelStores(
             generateTunnelStoresJobName,
             tunnelSecrets!!,

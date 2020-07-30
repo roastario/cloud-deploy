@@ -2,11 +2,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: networkservices
+  labels:
+    app: networkservices
 spec:
   replicas: 1
   selector:
     matchLabels:
       run: networkservices
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:

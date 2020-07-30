@@ -15,8 +15,7 @@ import net.corda.deployments.node.config.TunnelConfigParams
 
 open class FloatSetup(
     val namespace: String,
-    val shareCreator: AzureFileShareCreator,
-    val randSuffix: String
+    val shareCreator: AzureFileShareCreator
 ) {
 
 
@@ -74,7 +73,6 @@ open class FloatSetup(
     fun deploy(api: () -> ApiClient): FloatDeployment {
         val floatDeployment = createFloatDeployment(
             namespace,
-            randSuffix,
             configShare,
             tunnelComponents.tunnelShare,
             tunnelSecrets

@@ -7,22 +7,28 @@ import com.microsoft.azure.management.sql.SqlServer
 import net.corda.deployment.node.networking.ClusterNetwork
 import org.apache.commons.lang3.RandomStringUtils
 
-class SqlServerCreator(val azure: Azure, val resourceGroup: ResourceGroup, val runSuffix: String) {
+class SqlServerCreator(
+    val azure: Azure,
+    val resourceGroup: ResourceGroup
+) {
 
     fun createSQLServerDBForCorda(clusterNetwork: ClusterNetwork): DatabaseAndCredentials {
-        val adminUsername = "cordaAdmin-${RandomStringUtils.randomAlphanumeric(16)}"
+
+        val instanceId = RandomStringUtils.randomAlphanumeric(16).toLowerCase()
+        val adminUsername = "cordaAdmin-${RandomStringUtils.randomAlphanumeric(16).toLowerCase()}"
         val adminPassword = RandomStringUtils.randomGraph(16)
-        val databaseName = "cordaSQL-${runSuffix}"
-        val server = azure.sqlServers().define("corda-node-db-${runSuffix}")
+        val databaseName = "cordaSQL-$instanceId"
+        val server = azure.sqlServers().define("corda-node-db-${instanceId}")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
             .withAdministratorLogin(adminUsername)
             .withAdministratorPassword(adminPassword)
+            .withoutAccessFromAzureServices()
             .defineVirtualNetworkRule("inboundNetworkingRule")
             .withSubnet(clusterNetwork.createdNetwork.id(), clusterNetwork.nodeSubnetName)
             .attach()
             .defineDatabase(databaseName)
-            .withStandardEdition(SqlDatabaseStandardServiceObjective.S3)
+            .withStandardEdition(SqlDatabaseStandardServiceObjective.S2)
             .attach()
             .create()
 

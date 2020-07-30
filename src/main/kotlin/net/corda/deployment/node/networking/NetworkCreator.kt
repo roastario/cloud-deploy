@@ -1,12 +1,12 @@
 package net.corda.deployment.node.networking
 
 import com.microsoft.azure.management.Azure
-import com.microsoft.azure.management.network.AddressSpace
 import com.microsoft.azure.management.network.Network
 import com.microsoft.azure.management.network.PublicIPAddress
 import com.microsoft.azure.management.network.ServiceEndpointPropertiesFormat
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
+import net.corda.deployment.node.database.PostgresServerCreator
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.ADDRESS_SPACE
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.DMZ_CIDR
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.INTERNAL_CIDR
@@ -47,13 +47,12 @@ data class ClusterNetwork(
 
 class NetworkCreator(
     val azure: Azure,
-    val resourceGroup: ResourceGroup,
-    val runSuffix: String
+    val resourceGroup: ResourceGroup
 ) {
     fun createNetworkForClusters(controlIp: PublicIPAddress, p2pIp: PublicIPAddress): ClusterNetwork {
-        val nodeSubnetName = "nodeClusterSubNet"
-        val floatSubnetName = "floatClusterSubNet"
-        val createdNetwork = azure.networks().define("stefano-vnet-$runSuffix")
+        val nodeSubnetName = "internalClusterSubNet"
+        val floatSubnetName = "dmzClusterSubNet"
+        val createdNetwork = azure.networks().define("corda-vnet")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
             .withAddressSpace(ADDRESS_SPACE)

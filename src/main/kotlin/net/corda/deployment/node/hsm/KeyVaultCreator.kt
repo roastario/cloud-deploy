@@ -1,26 +1,24 @@
 package net.corda.deployment.node.hsm
 
-import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.graphrbac.BuiltInRole
 import com.microsoft.azure.management.graphrbac.RoleAssignment
 import com.microsoft.azure.management.graphrbac.ServicePrincipal
 import com.microsoft.azure.management.keyvault.*
 import com.microsoft.azure.management.resources.ResourceGroup
-import com.microsoft.rest.LogLevel
 import net.corda.deployment.node.principals.PrincipalAndCredentials
 import java.util.*
 
 class KeyVaultCreator(
     private val azure: Azure,
     private val resourceGroup: ResourceGroup,
-    private val runSuffix: String
+    private val nodeId: String
 ) {
     fun createKeyVaultAndConfigureServicePrincipalAccess(
         servicePrincipal: PrincipalAndCredentials
     ): Vault {
         val kv = azure.vaults()
-            .define("cordaVault-${runSuffix}")
+            .define("cordaVault-${nodeId}")
             .withRegion(resourceGroup.region()).withExistingResourceGroup(resourceGroup).withEmptyAccessPolicy()
             .withAccessFromAllNetworks().create()
         return kv.also { configureServicePrincipalAccessToKeyVault(servicePrincipal.servicePrincipal, it) }

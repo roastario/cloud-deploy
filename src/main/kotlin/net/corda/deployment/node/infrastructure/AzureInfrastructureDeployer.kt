@@ -2,6 +2,14 @@ package net.corda.deployment.node.infrastructure
 
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.resources.ResourceGroup
+import io.kubernetes.client.custom.V1Patch
+import io.kubernetes.client.openapi.ApiException
+import io.kubernetes.client.openapi.apis.AppsV1Api
+import io.kubernetes.client.openapi.models.V1Deployment
+import io.kubernetes.client.openapi.models.V1EnvVarBuilder
+import io.kubernetes.client.util.ClientBuilder
+import io.kubernetes.client.util.PatchUtils
+import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.*
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.float.AzureFloatSetup
@@ -9,27 +17,28 @@ import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.kubernetes.Clusters
 import net.corda.deployment.node.kubernetes.KubernetesClusterCreator
+import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.networking.NetworkCreator
 import net.corda.deployment.node.networking.PublicIpCreator
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
+import org.apache.commons.lang3.RandomStringUtils
+
 
 class AzureInfrastructureDeployer(
     val mngAzure: Azure,
-    val resourceGroup: ResourceGroup,
-    val runSuffix: String
+    val resourceGroup: ResourceGroup
 ) {
 
     fun setupInfrastructure(): AzureInfrastructure {
 
-        val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+        val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup)
         val servicePrincipalCreator = ServicePrincipalCreator(
             azure = mngAzure,
-            resourceGroup = resourceGroup,
-            runSuffix = runSuffix
+            resourceGroup = resourceGroup
         )
-        val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
-        val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+        val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup)
+        val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup)
 
         val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster", true)
         val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
@@ -43,15 +52,14 @@ class AzureInfrastructureDeployer(
             network = networkForClusters
         )
 
-        return AzureInfrastructure(clusters, mngAzure, resourceGroup, runSuffix)
+        return AzureInfrastructure(clusters, mngAzure, resourceGroup)
     }
 
 
     open class AzureInfrastructure(
         internal val clusters: Clusters,
         internal val azure: Azure,
-        internal val resourceGroup: ResourceGroup,
-        internal val runSuffix: String
+        internal val resourceGroup: ResourceGroup
     ) {
 
         private val shareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
@@ -59,7 +67,7 @@ class AzureInfrastructureDeployer(
         fun internalShareCreator(namespace: String): AzureFileShareCreator {
             return synchronized(shareCreators) {
                 shareCreators.computeIfAbsent("internal-$namespace") {
-                    AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.nonDmzApiSource())
+                    AzureFileShareCreator(azure, resourceGroup, namespace, clusters.nonDmzApiSource())
                 }
             }
         }
@@ -67,14 +75,13 @@ class AzureInfrastructureDeployer(
         fun dmzShareCreator(namespace: String): AzureFileShareCreator {
             return synchronized(shareCreators) {
                 shareCreators.computeIfAbsent("dmz-$namespace") {
-                    AzureFileShareCreator(azure, resourceGroup, runSuffix, namespace, clusters.dmzApiSource())
+                    AzureFileShareCreator(azure, resourceGroup, namespace, clusters.dmzApiSource())
                 }
             }
         }
 
-
         fun floatSetup(namespace: String): FloatSetup {
-            return AzureFloatSetup(namespace, dmzShareCreator(namespace), runSuffix, clusters.clusterNetwork)
+            return AzureFloatSetup(namespace, dmzShareCreator(namespace), clusters.clusterNetwork)
         }
 
         fun p2pAddress(): String {
@@ -82,19 +89,19 @@ class AzureInfrastructureDeployer(
         }
 
         fun artemisSetup(namespace: String): ArtemisSetup {
-            return ArtemisSetup(azure, resourceGroup, internalShareCreator(namespace), namespace, runSuffix, clusters.nonDmzApiSource())
+            return ArtemisSetup(azure, resourceGroup, internalShareCreator(namespace), namespace, clusters.nonDmzApiSource())
         }
 
         fun nodeSpecificInfrastructure(id: String): NodeAzureInfrastructure {
-            return NodeAzureInfrastructure(clusters, azure, resourceGroup, runSuffix, id)
+            return NodeAzureInfrastructure(clusters, azure, resourceGroup, id)
         }
 
         fun firewallSetup(namespace: String): FirewallSetup {
-            return FirewallSetup(namespace, internalShareCreator(namespace), runSuffix)
+            return FirewallSetup(namespace, internalShareCreator(namespace))
         }
 
         fun bridgeSetup(namespace: String): BridgeSetup {
-            return BridgeSetup(internalShareCreator(namespace), namespace, runSuffix)
+            return BridgeSetup(internalShareCreator(namespace), namespace, clusters.nonDmzApiSource())
         }
     }
 }
@@ -103,10 +110,9 @@ class NodeAzureInfrastructure(
     clusters: Clusters,
     azure: Azure,
     resourceGroup: ResourceGroup,
-    runSuffix: String,
     val nodeId: String
-) : AzureInfrastructureDeployer.AzureInfrastructure(clusters, azure, resourceGroup, runSuffix) {
-    val dbCreator = SqlServerCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+) : AzureInfrastructureDeployer.AzureInfrastructure(clusters, azure, resourceGroup) {
+    val dbCreator = SqlServerCreator(azure = azure, resourceGroup = resourceGroup)
 
     fun nodeSetup(namespace: String): NodeSetup {
         val database = dbCreator.createSQLServerDBForCorda(clusters.clusterNetwork)
@@ -115,7 +121,6 @@ class NodeAzureInfrastructure(
             database.toNodeDbParams(),
             namespace,
             clusters.nonDmzApiSource(),
-            runSuffix,
             nodeId,
             HsmType.AZURE
         )
@@ -123,19 +128,18 @@ class NodeAzureInfrastructure(
 
     fun keyVaultSetup(namespace: String): KeyVaultSetup {
         val servicePrincipalCreator =
-            ServicePrincipalCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
-        val keyVaultCreator = KeyVaultCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+            ServicePrincipalCreator(azure = azure, resourceGroup = resourceGroup)
+        val keyVaultCreator = KeyVaultCreator(azure = azure, resourceGroup = resourceGroup, nodeId = nodeId)
         val keyVaultServicePrincipal =
             servicePrincipalCreator.createServicePrincipalAndCredentials("vault", permissionsOnResourceGroup = false)
         val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(keyVaultServicePrincipal)
         val keyVaultAndCredentials = KeyVaultSetup.KeyVaultAndCredentials(keyVaultServicePrincipal, keyVault)
         return KeyVaultSetup(
             keyVaultAndCredentials,
-            azure,
             resourceGroup,
-            internalShareCreator(namespace),
             namespace,
-            runSuffix
+            nodeId,
+            clusters.nonDmzApiSource()
         )
     }
 }

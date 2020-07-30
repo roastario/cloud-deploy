@@ -1,5 +1,6 @@
 package net.corda.deployment.node
 
+import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
 import net.corda.deployment.node.storage.AzureFilesDirectory
@@ -7,7 +8,6 @@ import net.corda.deployments.node.config.BridgeConfigParams
 
 fun createBridgeDeployment(
     namespace: String,
-    runId: String,
     bridgeConfigShare: AzureFilesDirectory,
     tunnelStoresShare: AzureFilesDirectory,
     artemisStoresShare: AzureFilesDirectory,
@@ -32,21 +32,28 @@ fun createBridgeDeployment(
         .withApiVersion("apps/v1")
         .withNewMetadata()
         .withNamespace(namespace)
-        .withName("bridge-${runId}")
-        .withLabels(listOf("dmz" to "false").toMap())
+        .withName("bridge")
+        .withLabels(listOf("dmz" to "false", "run" to "bridge").toMap())
         .endMetadata()
         .withNewSpec()
         .withNewSelector()
-        .withMatchLabels(listOf("run" to "bridge-${runId}").toMap())
+        .withMatchLabels(listOf("run" to "bridge").toMap())
         .endSelector()
         .withReplicas(1)
+        .withNewStrategy()
+        .withType("RollingUpdate")
+        .withNewRollingUpdate()
+        .withMaxSurge(IntOrString(0))
+        .withMaxUnavailable(IntOrString(1))
+        .endRollingUpdate()
+        .endStrategy()
         .withNewTemplate()
         .withNewMetadata()
-        .withLabels(listOf("run" to "bridge-${runId}").toMap())
+        .withLabels(listOf("run" to "bridge").toMap())
         .endMetadata()
         .withNewSpec()
         .addNewContainer()
-        .withName("float-$runId")
+        .withName("bridge")
         .withImage("corda/enterprise-firewall:4.5")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-firewall")
