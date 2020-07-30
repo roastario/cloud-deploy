@@ -24,6 +24,7 @@ class NodeSetup(
     val namespace: String,
     val api: () -> ApiClient,
     val randomSuffix: String,
+    val nodeId: String,
     val hsm: HsmType
 ) {
     private lateinit var cordappsDirShare: AzureFilesDirectory
@@ -225,7 +226,7 @@ class NodeSetup(
     fun copyToCordappsDir(cordapps: List<File>, gradleCordapps: List<File>) {
         val cordappsDir = shareCreator.createDirectoryFor("node-cordapps")
 
-        cordapps.forEach { cordapp ->
+        (gradleCordapps + cordapps).forEach { cordapp ->
             println("Uploading cordapp: ${cordapp.absolutePath}")
             cordappsDir.modernClient.rootDirectoryClient.getFileClient(cordapp.name).also { client ->
                 if (client.exists().not()) {

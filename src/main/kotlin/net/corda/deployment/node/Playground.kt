@@ -18,16 +18,27 @@ import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1NamespaceBuilder
 import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
-import net.corda.deployment.node.storage.AzureFileShareCreator
+import net.corda.deployment.node.infrastructure.NodeAzureInfrastructure
 import net.corda.deployment.node.storage.uploadFromByteArray
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
+import java.math.BigInteger
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.security.Security
 import java.time.Duration
 import kotlin.system.exitProcess
 
-class InitialSetupCommand : CliktCommand() {
+
+class PrepareInfrastructure : CliktCommand(name = "prepareInfrastructure") {
+    override fun run() {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
+
+}
+
+class InitialSetupCommand : CliktCommand(name = "firstNode") {
 
     val subscriptionId: String by option("-s", "--subscription", help = "Azure Subscription").required()
     val resourceGroupName: String by option("-g", "--resource-group", help = "Azure Resource Group to use").required()
@@ -101,7 +112,6 @@ fun performDeployment(
     val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup, runSuffix)
     val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
     val namespace = "corda-zone"
-    val nonDmzShareCreator: AzureFileShareCreator = infrastructure.internalShareCreator(namespace)
     val trustRootConfig = TrustRootConfig(trustRootURL, trustRootPassword)
 
     val namespaceToCreate = V1NamespaceBuilder()
@@ -118,8 +128,9 @@ fun performDeployment(
         CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
     }
 
-    //configure key vault
-    val keyVaultSetup = infrastructure.keyVaultSetup(namespace)
+    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
+    //configure key vault for node
+    val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
     keyVaultSetup.generateKeyVaultCryptoServiceConfig()
     val vaultSecrets = keyVaultSetup.createKeyVaultSecrets(infrastructure.clusters.nonDmzApiSource())
 
@@ -131,7 +142,7 @@ fun performDeployment(
     val deployedArtemis = artemisSetup.deploy()
 
     //configure and register the node
-    val nodeSetup: NodeSetup = infrastructure.nodeSetup(namespace)
+    val nodeSetup: NodeSetup = nodeSpecificInfra.nodeSetup(namespace)
     nodeSetup.generateNodeConfig(
         x500Name,
         email,
@@ -148,7 +159,7 @@ fun performDeployment(
     val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
 
     //setup the firewall tunnel
-    val firewallSetup = FirewallSetup(namespace, nonDmzShareCreator, runSuffix)
+    val firewallSetup: FirewallSetup = infrastructure.firewallSetup(namespace)
     val firewallTunnelSecrets =
         firewallSetup.generateFirewallTunnelSecrets(infrastructure.clusters.nonDmzApiSource(), infrastructure.clusters.dmzApiSource())
     val firewallTunnelStores = firewallSetup.generateTunnelStores(infrastructure.clusters.nonDmzApiSource())
@@ -162,7 +173,7 @@ fun performDeployment(
     val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource())
 
     //configure and deploy the bridge
-    val bridgeSetup = BridgeSetup(nonDmzShareCreator, namespace, runSuffix)
+    val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
     bridgeSetup.generateBridgeStoreSecrets(infrastructure.clusters.nonDmzApiSource())
     bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult, infrastructure.clusters.nonDmzApiSource())
     bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
@@ -175,7 +186,6 @@ fun performDeployment(
     bridgeSetup.createArtemisSecrets(artemisSecrets)
     val bridgeDeployment = bridgeSetup.deploy(infrastructure.clusters.nonDmzApiSource())
 
-
     //continue setting up the node
     nodeSetup.copyArtemisStores(generatedArtemisStores)
     nodeSetup.createArtemisSecrets(artemisSecrets)
@@ -184,7 +194,29 @@ fun performDeployment(
     nodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
     nodeSetup.deploy()
 
+    val otherX500 = "O=BigCorporation,L=New York,C=US"
+    val nextNodeInfra = infrastructure.nodeSpecificInfrastructure(otherX500.shortSha())
+
+    val nextNodeKVSetup = nextNodeInfra.keyVaultSetup(namespace)
+    val nextNodeSetup = nextNodeInfra.nodeSetup(namespace)
+
+    nextNodeSetup.generateNodeConfig(
+        otherX500,
+        email,
+        infrastructure.p2pAddress(),
+        deployedArtemis.serviceName,
+        doormanURL,
+        networkMapURL,
+        "u",
+        "p"
+    )
+    nextNodeSetup.uploadNodeConfig()
+    nextNodeSetup.createNodeDatabaseSecrets()
+    val nextNodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
+    val nextNodeInitialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
+
     exitProcess(0)
+
 
 }
 
@@ -210,4 +242,11 @@ fun ShareFileClient.createFrom(source: ShareFileClient, timeout: Duration = Dura
 
 fun String.toEnvVar(): String {
     return "\${$this}"
+}
+
+fun String.shortSha(): String {
+    val digest = MessageDigest.getInstance("SHA")
+    val hash = digest.digest(this.toByteArray(StandardCharsets.UTF_8))
+    val sha = BigInteger(hash).toString(36)
+    return sha.substring(sha.length - 8)
 }

@@ -2,11 +2,7 @@ package net.corda.deployment.node.infrastructure
 
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.resources.ResourceGroup
-import net.corda.deployment.node.ArtemisSetup
-import net.corda.deployment.node.HsmType
-import net.corda.deployment.node.KeyVaultSetup
-import net.corda.deployment.node.NodeSetup
-import net.corda.deployment.node.database.SqlServerAndCredentials
+import net.corda.deployment.node.*
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.float.AzureFloatSetup
 import net.corda.deployment.node.float.FloatSetup
@@ -27,20 +23,18 @@ class AzureInfrastructureDeployer(
     fun setupInfrastructure(): AzureInfrastructure {
 
         val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
-        val servicePrincipalCreator = ServicePrincipalCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
-        val keyVaultCreator = KeyVaultCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+        val servicePrincipalCreator = ServicePrincipalCreator(
+            azure = mngAzure,
+            resourceGroup = resourceGroup,
+            runSuffix = runSuffix
+        )
         val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
-        val dbCreator = SqlServerCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
         val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup, runSuffix = runSuffix)
 
-        val keyVaultServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("vault")
-        val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster")
-        val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(keyVaultServicePrincipal)
+        val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster", true)
         val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
         val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
         val networkForClusters = networkCreator.createNetworkForClusters(publicIpForAzureP2p, publicIpForAzureRpc)
-        val database = dbCreator.createSQLServerDBForCorda(networkForClusters)
-
 
         val clusters = clusterCreator.createClusters(
             p2pIpAddress = publicIpForAzureP2p,
@@ -49,18 +43,15 @@ class AzureInfrastructureDeployer(
             network = networkForClusters
         )
 
-        val keyVaultAndCredentials = KeyVaultSetup.KeyVaultAndCredentials(keyVaultServicePrincipal, keyVault)
-
-        return AzureInfrastructure(clusters, keyVaultAndCredentials, database, mngAzure, resourceGroup, runSuffix)
+        return AzureInfrastructure(clusters, mngAzure, resourceGroup, runSuffix)
     }
 
-    class AzureInfrastructure(
-        val clusters: Clusters,
-        val keyVaultAndCredentials: KeyVaultSetup.KeyVaultAndCredentials,
-        val database: SqlServerAndCredentials,
-        private val azure: Azure,
-        private val resourceGroup: ResourceGroup,
-        private val runSuffix: String
+
+    open class AzureInfrastructure(
+        internal val clusters: Clusters,
+        internal val azure: Azure,
+        internal val resourceGroup: ResourceGroup,
+        internal val runSuffix: String
     ) {
 
         private val shareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
@@ -81,16 +72,6 @@ class AzureInfrastructureDeployer(
             }
         }
 
-        fun keyVaultSetup(namespace: String): KeyVaultSetup {
-            return KeyVaultSetup(
-                keyVaultAndCredentials,
-                azure,
-                resourceGroup,
-                internalShareCreator(namespace),
-                namespace,
-                runSuffix
-            )
-        }
 
         fun floatSetup(namespace: String): FloatSetup {
             return AzureFloatSetup(namespace, dmzShareCreator(namespace), runSuffix, clusters.clusterNetwork)
@@ -104,16 +85,57 @@ class AzureInfrastructureDeployer(
             return ArtemisSetup(azure, resourceGroup, internalShareCreator(namespace), namespace, runSuffix, clusters.nonDmzApiSource())
         }
 
-        fun nodeSetup(namespace: String): NodeSetup {
-            return NodeSetup(
-                internalShareCreator(namespace),
-                database.toNodeDbParams(),
-                namespace,
-                clusters.nonDmzApiSource(),
-                runSuffix,
-                HsmType.AZURE
-            )
+        fun nodeSpecificInfrastructure(id: String): NodeAzureInfrastructure {
+            return NodeAzureInfrastructure(clusters, azure, resourceGroup, runSuffix, id)
+        }
+
+        fun firewallSetup(namespace: String): FirewallSetup {
+            return FirewallSetup(namespace, internalShareCreator(namespace), runSuffix)
+        }
+
+        fun bridgeSetup(namespace: String): BridgeSetup {
+            return BridgeSetup(internalShareCreator(namespace), namespace, runSuffix)
         }
     }
+}
 
+class NodeAzureInfrastructure(
+    clusters: Clusters,
+    azure: Azure,
+    resourceGroup: ResourceGroup,
+    runSuffix: String,
+    val nodeId: String
+) : AzureInfrastructureDeployer.AzureInfrastructure(clusters, azure, resourceGroup, runSuffix) {
+    val dbCreator = SqlServerCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+
+    fun nodeSetup(namespace: String): NodeSetup {
+        val database = dbCreator.createSQLServerDBForCorda(clusters.clusterNetwork)
+        return NodeSetup(
+            internalShareCreator(namespace),
+            database.toNodeDbParams(),
+            namespace,
+            clusters.nonDmzApiSource(),
+            runSuffix,
+            nodeId,
+            HsmType.AZURE
+        )
+    }
+
+    fun keyVaultSetup(namespace: String): KeyVaultSetup {
+        val servicePrincipalCreator =
+            ServicePrincipalCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+        val keyVaultCreator = KeyVaultCreator(azure = azure, resourceGroup = resourceGroup, runSuffix = runSuffix)
+        val keyVaultServicePrincipal =
+            servicePrincipalCreator.createServicePrincipalAndCredentials("vault", permissionsOnResourceGroup = false)
+        val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(keyVaultServicePrincipal)
+        val keyVaultAndCredentials = KeyVaultSetup.KeyVaultAndCredentials(keyVaultServicePrincipal, keyVault)
+        return KeyVaultSetup(
+            keyVaultAndCredentials,
+            azure,
+            resourceGroup,
+            internalShareCreator(namespace),
+            namespace,
+            runSuffix
+        )
+    }
 }

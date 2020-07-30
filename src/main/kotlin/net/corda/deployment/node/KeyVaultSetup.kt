@@ -41,15 +41,12 @@ class KeyVaultSetup(
     }
 
     fun createKeyVaultSecrets(api: () -> ApiClient): KeyVaultSecrets {
-
         if (this.generatedConfig == null) {
             throw IllegalStateException("must generate config before creating secrets")
         }
-
         val keyVaultCredentialsSecretName = "az-kv-password-secrets-$runId"
         val azKeyVaultCredentialsFilePasswordKey = "az-kv-password"
         val azKeyVaultCredentialsClientIdKey = "az-kv-client-id"
-
         SecretCreator.createStringSecret(
             keyVaultCredentialsSecretName,
             listOf(
@@ -59,7 +56,6 @@ class KeyVaultSetup(
             namespace,
             api
         )
-
         val credentialsAndConfigSecretName = "keyvault-auth-file-secrets-$runId"
         SecretCreator.createByteArraySecret(
             credentialsAndConfigSecretName,

@@ -4,10 +4,7 @@ import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.graphrbac.BuiltInRole
 import com.microsoft.azure.management.graphrbac.ServicePrincipal
 import com.microsoft.azure.management.resources.ResourceGroup
-import org.apache.commons.lang3.ArrayUtils
 import org.apache.commons.lang3.RandomStringUtils
-import org.apache.commons.lang3.StringUtils
-import org.apache.commons.text.RandomStringGenerator
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
@@ -15,36 +12,36 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.util.io.pem.PemObject
 import org.bouncycastle.util.io.pem.PemWriter
 import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
 import java.io.FileWriter
 import java.math.BigInteger
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.*
 import java.security.cert.Certificate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.*
-import kotlin.random.Random
 
 const val VALID_SERVICE_PRINCIPAL_PASSWORD_SYMBOLS = "!£^*()#@.,~"
 
 class ServicePrincipalCreator(
     private val azure: Azure,
-    private val resourceGroup:
-    ResourceGroup, private val runSuffix: String
+    private val resourceGroup: ResourceGroup,
+    private val runSuffix: String
 ) {
 
-    fun createServicePrincipalAndCredentials(principalId: String): PrincipalAndCredentials {
+    fun createServicePrincipalAndCredentials(principalId: String, permissionsOnResourceGroup: Boolean): PrincipalAndCredentials {
         val servicePrincipalKeyPair = generateRSAKeyPair()
         val servicePrincipalCert = createSelfSignedCertificate(servicePrincipalKeyPair, "CN=CLI-Login, OU=${principalId}")
         val clientSecret = createServicePrincipalPassword(32)
         val spName = "testingspforaks${principalId}$runSuffix"
         val createdSP = azure.accessManagement().servicePrincipals().define(spName)
-            .withNewApplication("http://${spName}")
-            .withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, resourceGroup)
+            .withNewApplication("http://${spName}").let {
+                if (permissionsOnResourceGroup) {
+                    it.withNewRoleInResourceGroup(BuiltInRole.CONTRIBUTOR, resourceGroup)
+                } else {
+                    it
+                }
+            }
             .definePasswordCredential("cliLoginPwd")
             .withPasswordValue(clientSecret)
             .attach()

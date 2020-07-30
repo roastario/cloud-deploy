@@ -9,11 +9,11 @@ import org.apache.commons.lang3.RandomStringUtils
 
 class SqlServerCreator(val azure: Azure, val resourceGroup: ResourceGroup, val runSuffix: String) {
 
-    fun createSQLServerDBForCorda(clusterNetwork: ClusterNetwork): SqlServerAndCredentials {
-        val adminUsername = "cordaAdmin"
+    fun createSQLServerDBForCorda(clusterNetwork: ClusterNetwork): DatabaseAndCredentials {
+        val adminUsername = "cordaAdmin-${RandomStringUtils.randomAlphanumeric(16)}"
         val adminPassword = RandomStringUtils.randomGraph(16)
-        val databaseName = "cordaSQL"
-        val server = azure.sqlServers().define("stefano-testing-sql-${runSuffix}")
+        val databaseName = "cordaSQL-${runSuffix}"
+        val server = azure.sqlServers().define("corda-node-db-${runSuffix}")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
             .withAdministratorLogin(adminUsername)
@@ -26,7 +26,7 @@ class SqlServerCreator(val azure: Azure, val resourceGroup: ResourceGroup, val r
             .attach()
             .create()
 
-        return SqlServerAndCredentials(
+        return DatabaseAndCredentials(
             sqlServer = server,
             adminUsername = adminUsername,
             adminPassword = adminPassword,
@@ -35,7 +35,7 @@ class SqlServerCreator(val azure: Azure, val resourceGroup: ResourceGroup, val r
     }
 }
 
-data class SqlServerAndCredentials(
+data class DatabaseAndCredentials(
     val sqlServer: SqlServer,
     val databaseName: String,
     val adminUsername: String,
