@@ -53,6 +53,7 @@ class InitialSetupCommand : CliktCommand(name = "firstNode") {
     val trustRootURL: String? by option("-t", "--trust-root-url", help = "the url to download the network-trust-root from")
     val trustRootFile: File? by option("-f", "--trust-root-f", help = "the path to load the network-trust-root from").file()
     val trustRootPassword: String by option("-p", "--trust-root-password", help = "the password for the network-trust-root").required()
+    val csrToken: String? by option("--csrToken", help = "a OTK to pass to the idManager when requesting a CSR")
 
     val cordapps: List<File> by option("-c", "--cordapp", help = "Path to cordapp to load into the node").file(
         mustExist = true,
