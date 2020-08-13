@@ -58,7 +58,10 @@ class NetworkCreator(
             .withAddressSpace(ADDRESS_SPACE)
             .withSubnet(nodeSubnetName, INTERNAL_CIDR)
             .withSubnet(floatSubnetName, DMZ_CIDR)
-            .create().also { addSubnetServiceEndPoint(it, nodeSubnetName, "Microsoft.Sql", resourceGroup.region(), azure) }
+            .create().also {
+                addSubnetServiceEndPoint(it, nodeSubnetName, "Microsoft.Sql", resourceGroup.region(), azure)
+                addSubnetServiceEndPoint(it, nodeSubnetName, "Microsoft.KeyVault", resourceGroup.region(), azure)
+            }
         return ClusterNetwork(nodeSubnetName, floatSubnetName, createdNetwork, p2pIp, controlIp)
     }
 

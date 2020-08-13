@@ -118,13 +118,13 @@ fun createFloatDeployment(
         .build()
 }
 
-fun createIntraClusterInternalFloatService(floatDeployment: V1Deployment): V1Service {
+fun createIntraClusterInternalFloatService(floatDeployment: V1Deployment, id: String): V1Service {
     return V1ServiceBuilder()
         .withKind("Service")
         .withApiVersion("v1")
         .withNewMetadata()
         .withNamespace(floatDeployment.metadata?.namespace)
-        .withName(floatDeployment.metadata?.name)
+        .withName(floatDeployment.metadata?.name + id)
         .withLabels(listOf("run" to floatDeployment.metadata?.name).toMap())
         .endMetadata()
         .withNewSpec()

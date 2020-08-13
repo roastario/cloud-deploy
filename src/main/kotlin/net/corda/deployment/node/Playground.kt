@@ -208,42 +208,42 @@ suspend fun performDeployment(
     nodeSetup.deploy()
 
     //ADD SECOND NODE
-    val otherX500 = "O=BigCorporation2,L=New York,C=US"
-    val nextNodeInfra = infrastructure.nodeSpecificInfrastructure(otherX500.shortSha())
-
-    val nextNodeKVSetup = nextNodeInfra.keyVaultSetup(namespace)
-    val nextNodeSetup = nextNodeInfra.nodeSetup(namespace)
-    nextNodeKVSetup.generateKeyVaultCryptoServiceConfig()
-    val nextNodeKVSecrets = nextNodeKVSetup.createKeyVaultSecrets()
-
-    nextNodeSetup.generateNodeConfig(
-        otherX500,
-        email,
-        infrastructure.p2pAddress(),
-        deployedArtemis.serviceName,
-        doormanURL,
-        networkMapURL,
-        "u",
-        "p"
-    )
-    nextNodeSetup.uploadNodeConfig()
-    nextNodeSetup.createNodeDatabaseSecrets()
-    val nextNodeStoreSecrets = nextNodeSetup.createNodeKeyStoreSecrets()
-    val nextNodeInitialRegistrationResult = nextNodeSetup.performInitialRegistration(nextNodeKVSecrets, artemisSecrets, trustRootConfig)
-    bridgeSetup.importNodeKeyStoreIntoBridge(
-        nextNodeStoreSecrets,
-        nextNodeInitialRegistrationResult
-    )
-
-    //continue setting up the node
-    nextNodeSetup.copyArtemisStores(generatedArtemisStores)
-    nextNodeSetup.createArtemisSecrets(artemisSecrets)
-    nextNodeSetup.createKeyVaultSecrets(nextNodeKVSecrets)
-    nextNodeSetup.copyToDriversDir()
-    nextNodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
-    nextNodeSetup.deploy()
-
-    bridgeDeployment.restart(infrastructure.clusters.nonDmzApiSource())
+//    val otherX500 = "O=BigCorporation2,L=New York,C=US"
+//    val nextNodeInfra = infrastructure.nodeSpecificInfrastructure(otherX500.shortSha())
+//
+//    val nextNodeKVSetup = nextNodeInfra.keyVaultSetup(namespace)
+//    val nextNodeSetup = nextNodeInfra.nodeSetup(namespace)
+//    nextNodeKVSetup.generateKeyVaultCryptoServiceConfig()
+//    val nextNodeKVSecrets = nextNodeKVSetup.createKeyVaultSecrets()
+//
+//    nextNodeSetup.generateNodeConfig(
+//        otherX500,
+//        email,
+//        infrastructure.p2pAddress(),
+//        deployedArtemis.serviceName,
+//        doormanURL,
+//        networkMapURL,
+//        "u",
+//        "p"
+//    )
+//    nextNodeSetup.uploadNodeConfig()
+//    nextNodeSetup.createNodeDatabaseSecrets()
+//    val nextNodeStoreSecrets = nextNodeSetup.createNodeKeyStoreSecrets()
+//    val nextNodeInitialRegistrationResult = nextNodeSetup.performInitialRegistration(nextNodeKVSecrets, artemisSecrets, trustRootConfig)
+//    bridgeSetup.importNodeKeyStoreIntoBridge(
+//        nextNodeStoreSecrets,
+//        nextNodeInitialRegistrationResult
+//    )
+//
+//    //continue setting up the node
+//    nextNodeSetup.copyArtemisStores(generatedArtemisStores)
+//    nextNodeSetup.createArtemisSecrets(artemisSecrets)
+//    nextNodeSetup.createKeyVaultSecrets(nextNodeKVSecrets)
+//    nextNodeSetup.copyToDriversDir()
+//    nextNodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
+//    nextNodeSetup.deploy()
+//
+//    bridgeDeployment.restart(infrastructure.clusters.nonDmzApiSource())
 
     exitProcess(0)
 

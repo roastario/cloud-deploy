@@ -2,14 +2,6 @@ package net.corda.deployment.node.infrastructure
 
 import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.resources.ResourceGroup
-import io.kubernetes.client.custom.V1Patch
-import io.kubernetes.client.openapi.ApiException
-import io.kubernetes.client.openapi.apis.AppsV1Api
-import io.kubernetes.client.openapi.models.V1Deployment
-import io.kubernetes.client.openapi.models.V1EnvVarBuilder
-import io.kubernetes.client.util.ClientBuilder
-import io.kubernetes.client.util.PatchUtils
-import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.*
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.float.AzureFloatSetup
@@ -17,12 +9,10 @@ import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.kubernetes.Clusters
 import net.corda.deployment.node.kubernetes.KubernetesClusterCreator
-import net.corda.deployment.node.kubernetes.simpleApply
 import net.corda.deployment.node.networking.NetworkCreator
 import net.corda.deployment.node.networking.PublicIpCreator
 import net.corda.deployment.node.principals.ServicePrincipalCreator
 import net.corda.deployment.node.storage.AzureFileShareCreator
-import org.apache.commons.lang3.RandomStringUtils
 
 
 class AzureInfrastructureDeployer(
@@ -43,7 +33,7 @@ class AzureInfrastructureDeployer(
         val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster", true)
         val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
         val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
-        val networkForClusters = networkCreator.createNetworkForClusters(publicIpForAzureP2p, publicIpForAzureRpc)
+        val networkForClusters = networkCreator.createNetworkForClusters(publicIpForAzureRpc, publicIpForAzureP2p)
 
         val clusters = clusterCreator.createClusters(
             p2pIpAddress = publicIpForAzureP2p,
@@ -81,7 +71,7 @@ class AzureInfrastructureDeployer(
         }
 
         fun floatSetup(namespace: String): FloatSetup {
-            return AzureFloatSetup(namespace, dmzShareCreator(namespace), clusters.clusterNetwork)
+            return AzureFloatSetup(namespace, dmzShareCreator(namespace), clusters.clusterNetwork, resourceGroup)
         }
 
         fun p2pAddress(): String {
@@ -129,7 +119,8 @@ class NodeAzureInfrastructure(
     fun keyVaultSetup(namespace: String): KeyVaultSetup {
         val servicePrincipalCreator =
             ServicePrincipalCreator(azure = azure, resourceGroup = resourceGroup)
-        val keyVaultCreator = KeyVaultCreator(azure = azure, resourceGroup = resourceGroup, nodeId = nodeId)
+        val keyVaultCreator =
+            KeyVaultCreator(azure = azure, resourceGroup = resourceGroup, clusterNetwork = clusters.clusterNetwork, nodeId = nodeId)
         val keyVaultServicePrincipal =
             servicePrincipalCreator.createServicePrincipalAndCredentials("vault", permissionsOnResourceGroup = false)
         val keyVault = keyVaultCreator.createKeyVaultAndConfigureServicePrincipalAccess(keyVaultServicePrincipal)

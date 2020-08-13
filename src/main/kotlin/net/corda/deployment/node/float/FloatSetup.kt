@@ -78,19 +78,30 @@ open class FloatSetup(
             tunnelSecrets
         )
         val internalService = buildInternalService(floatDeployment)
+        val externalService = buildExternalService(floatDeployment)
         simpleApply.create(floatDeployment, namespace, api)
         simpleApply.create(internalService.underlyingService, namespace, api)
+        simpleApply.create(externalService.underlyingService, namespace, api)
 
-        return FloatDeployment(floatDeployment, internalService).also {
+        return FloatDeployment(floatDeployment, internalService, externalService).also {
             this.deployment = it
         }
     }
 
     open fun buildInternalService(deployment: V1Deployment): InternalFloatService {
-        val underlyingService = createIntraClusterInternalFloatService(deployment)
+        val underlyingService = createIntraClusterInternalFloatService(deployment, "internal")
         return object : InternalFloatService(underlyingService) {
             override fun getInternalAddress(): String {
                 return underlyingService.metadata?.name ?: throw IllegalStateException("internal float service name not available")
+            }
+        }
+    }
+
+    open fun buildExternalService(deployment: V1Deployment): ExternalFloatService {
+        val underlyingService = createIntraClusterInternalFloatService(deployment, "external")
+        return object : ExternalFloatService(underlyingService) {
+            override fun getP2PAddress(): String {
+                return underlyingService.metadata?.name ?: throw IllegalStateException("external float service name not available")
             }
         }
     }
@@ -103,8 +114,16 @@ open class FloatSetup(
 
 class FloatTunnelComponents(val tunnelShare: AzureFilesDirectory)
 
-class FloatDeployment(val deployment: V1Deployment, val internalService: InternalFloatService, val externalService: V1Service? = null)
+class FloatDeployment(
+    val deployment: V1Deployment,
+    val internalService: InternalFloatService,
+    val externalService: ExternalFloatService? = null
+)
 
 abstract class InternalFloatService(val underlyingService: V1Service) {
     abstract fun getInternalAddress(): String
+}
+
+abstract class ExternalFloatService(val underlyingService: V1Service) {
+    abstract fun getP2PAddress(): String
 }

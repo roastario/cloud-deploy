@@ -6,21 +6,30 @@ import com.microsoft.azure.management.graphrbac.RoleAssignment
 import com.microsoft.azure.management.graphrbac.ServicePrincipal
 import com.microsoft.azure.management.keyvault.*
 import com.microsoft.azure.management.resources.ResourceGroup
+import net.corda.deployment.node.networking.ClusterNetwork
 import net.corda.deployment.node.principals.PrincipalAndCredentials
 import java.util.*
 
 class KeyVaultCreator(
     private val azure: Azure,
     private val resourceGroup: ResourceGroup,
-    private val nodeId: String
+    private val nodeId: String,
+    private val clusterNetwork: ClusterNetwork
 ) {
     fun createKeyVaultAndConfigureServicePrincipalAccess(
         servicePrincipal: PrincipalAndCredentials
     ): Vault {
+
+        val discoveredVnet = azure.networks().getById(clusterNetwork.createdNetwork.id())
+        val nodeSubnet = discoveredVnet.subnets()[clusterNetwork.nodeSubnetName]?.inner()
+            ?: throw IllegalStateException("node internal subnet not available")
         val kv = azure.vaults()
             .define("cordaVault-${nodeId}")
-            .withRegion(resourceGroup.region()).withExistingResourceGroup(resourceGroup).withEmptyAccessPolicy()
-            .withAccessFromAllNetworks().create()
+            .withRegion(resourceGroup.region()).withExistingResourceGroup(resourceGroup)
+            .withEmptyAccessPolicy()
+            .withAccessFromSelectedNetworks()
+            .withVirtualNetworkRules(listOf(VirtualNetworkRule().withId(nodeSubnet.id())))
+            .create()
         return kv.also { configureServicePrincipalAccessToKeyVault(servicePrincipal.servicePrincipal, it) }
     }
 
