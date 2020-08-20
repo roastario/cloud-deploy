@@ -24,7 +24,7 @@ version '1.0-SNAPSHOT'
 
 sourceCompatibility = 1.8
 
-ext.corda_components_version = "4.5"
+ext.corda_components_version = "4.5.1"
 
 repositories {
     mavenCentral()
