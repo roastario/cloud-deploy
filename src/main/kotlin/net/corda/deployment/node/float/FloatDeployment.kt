@@ -41,8 +41,8 @@ fun createFloatDeployment(
         .withNewSpec()
         .addNewContainer()
         .withName("float")
-        .withImage("corda/enterprise-firewall:4.5")
-        .withImagePullPolicy("IfNotPresent")
+        .withImage("corda/enterprise-firewall:4.5.1")
+        .withImagePullPolicy("Always")
         .withCommand("run-firewall")
         .withEnv(
             V1EnvVarBuilder().withName("JVM_ARGS").withValue("-Xms512M -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=80").build(),
