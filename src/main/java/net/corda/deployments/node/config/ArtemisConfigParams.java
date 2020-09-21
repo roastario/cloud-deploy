@@ -2,6 +2,12 @@ package net.corda.deployments.node.config;
 
 public class ArtemisConfigParams {
 
+    public static final String BRIDGE_DIR_TO_COPY_STORES_TO = "/tmp/bridgeStores";
+    public static final String BRIDGE_DIR_TO_COPY_STORES_TO_ENV_NAME = "BRDIGE_STORES_DIR";
+
+    public static final String NODE_DIR_TO_COPY_STORES_TO = "/tmp/nodeStores";
+    public static final String NODE_DIR_TO_COPY_STORES_TO_ENV_NAME = "NODE_STORES_DIR";
+
     public static final String ARTEMIS_BROKER_BASE_DIR = "/opt/artemis-broker";
     public static final String ARTEMIS_STORES_DIR = "/etc/artemis";
 

@@ -50,10 +50,10 @@ class ArtemisSetup(
                 artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
                 artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
                 artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
-            ).toMap()
-            , namespace, apiSource
+            ).toMap(),
+            namespace,
+            apiSource
         )
-
         secrets = ArtemisSecrets(
             artemisSecretsName,
             artemisStorePassSecretKey,
@@ -63,13 +63,22 @@ class ArtemisSetup(
         return secrets as ArtemisSecrets
     }
 
-    suspend fun generateArtemisStores(): GeneratedArtemisStores {
+    suspend fun generateArtemisStores(
+        nodeArtemisShare: AzureFileShareCreator,
+        bridgeArtemisShare: AzureFileShareCreator
+    ): GeneratedArtemisStores {
         if (secrets == null) {
             throw IllegalStateException("Must generate artemis secrets before generating stores")
         }
         val workingDir = shareCreator.createDirectoryFor("artemis-stores")
         val jobName = "generate-artemis-stores"
-        val generateArtemisStoresJob = generateArtemisStoresJob(jobName, secrets!!, workingDir)
+        val generateArtemisStoresJob = generateArtemisStoresJob(
+            jobName,
+            secrets!!,
+            workingDir,
+            nodeArtemisShare,
+            bridgeArtemisShare
+        )
         simpleApply.create(generateArtemisStoresJob, namespace, apiSource)
         waitForJob(generateArtemisStoresJob, namespace, apiSource)
         dumpLogsForJob(generateArtemisStoresJob, namespace, apiSource)

@@ -11,8 +11,6 @@ import com.github.ajalt.clikt.parameters.options.transformAll
 import com.github.ajalt.clikt.parameters.types.file
 import com.microsoft.azure.credentials.AzureCliCredentials
 import com.microsoft.azure.management.Azure
-import com.microsoft.azure.management.postgresql.v2017_12_01.*
-import com.microsoft.azure.management.postgresql.v2017_12_01.implementation.PostgreSQLManager
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
 import freighter.utils.GradleUtils
@@ -23,7 +21,6 @@ import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
 import net.corda.deployment.node.infrastructure.NodeAzureInfrastructure
 import net.corda.deployment.node.storage.uploadFromByteArray
-import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
 import java.math.BigInteger
@@ -142,71 +139,74 @@ suspend fun performDeployment(
         CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
     }
 
-    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
-    //configure key vault for node
-    val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
-    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
-    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
+//    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
+//    //configure key vault for node
+//    val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
+//    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
+//    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
+
+    val nodeArtemisShare = infrastructure.internalShareCreator("node-artemis-files")
+    val bridgeArtemisShare = infrastructure.internalShareCreator("bridge-artemis-files")
 
     //configure and deploy artemis
     val artemisSetup: ArtemisSetup = infrastructure.artemisSetup(namespace)
     val artemisSecrets = artemisSetup.generateArtemisSecrets()
-    val generatedArtemisStores = artemisSetup.generateArtemisStores()
+    val generatedArtemisStores = artemisSetup.generateArtemisStores(nodeArtemisShare, bridgeArtemisShare)
     val configuredArtemisBroker = artemisSetup.configureArtemisBroker()
     val deployedArtemis = artemisSetup.deploy(useAzureDiskForData = true)
 
-    //configure and register the node
-    val nodeSetup: NodeSetup = nodeSpecificInfra.nodeSetup(namespace)
-    nodeSetup.generateNodeConfig(
-        x500Name,
-        email,
-        infrastructure.p2pAddress(),
-        deployedArtemis.serviceName,
-        doormanURL,
-        networkMapURL,
-        "u",
-        "p"
-    )
-    nodeSetup.uploadNodeConfig()
-    nodeSetup.createNodeDatabaseSecrets()
-    val nodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
-    val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
-
-    //setup the firewall tunnel
-    val firewallSetup: FirewallSetup = infrastructure.firewallSetup(namespace)
-    val firewallTunnelSecrets =
-        firewallSetup.generateFirewallTunnelSecrets(infrastructure.clusters.nonDmzApiSource(), infrastructure.clusters.dmzApiSource())
-    val firewallTunnelStores = firewallSetup.generateTunnelStores(infrastructure.clusters.nonDmzApiSource())
-
-    //configure and deploy the float
-    val floatSetup: FloatSetup = infrastructure.floatSetup(namespace)
-    floatSetup.copyTunnelStoreComponents(firewallTunnelStores)
-    floatSetup.createTunnelSecrets(firewallTunnelSecrets)
-    floatSetup.generateConfig()
-    floatSetup.uploadConfig()
-    val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource())
-
-    //configure and deploy the bridge
-    val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
-    bridgeSetup.generateBridgeStoreSecrets()
-    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult)
-    bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
-    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
-    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
-    bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
-    bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
-    bridgeSetup.generateBridgeConfig(deployedArtemis.serviceName, floatDeployment.internalService.getInternalAddress())
-    bridgeSetup.uploadBridgeConfig()
-    bridgeSetup.createArtemisSecrets(artemisSecrets)
-    val bridgeDeployment = bridgeSetup.deploy()
-
-    //continue setting up the node
-    nodeSetup.copyArtemisStores(generatedArtemisStores)
-    nodeSetup.createArtemisSecrets(artemisSecrets)
-    nodeSetup.createKeyVaultSecrets(vaultSecrets)
-    nodeSetup.copyToDriversDir()
-    nodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
-    nodeSetup.deploy()
+//    //configure and register the node
+//    val nodeSetup: NodeSetup = nodeSpecificInfra.nodeSetup(namespace)
+//    nodeSetup.generateNodeConfig(
+//        x500Name,
+//        email,
+//        infrastructure.p2pAddress(),
+//        deployedArtemis.serviceName,
+//        doormanURL,
+//        networkMapURL,
+//        "u",
+//        "p"
+//    )
+//    nodeSetup.uploadNodeConfig()
+//    nodeSetup.createNodeDatabaseSecrets()
+//    val nodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
+//    val initialRegistrationResult = nodeSetup.performInitialRegistration(vaultSecrets, artemisSecrets, trustRootConfig)
+//
+//    //setup the firewall tunnel
+//    val firewallSetup: FirewallSetup = infrastructure.firewallSetup(namespace)
+//    val firewallTunnelSecrets =
+//        firewallSetup.generateFirewallTunnelSecrets(infrastructure.clusters.nonDmzApiSource(), infrastructure.clusters.dmzApiSource())
+//    val firewallTunnelStores = firewallSetup.generateTunnelStores(infrastructure.clusters.nonDmzApiSource())
+//
+//    //configure and deploy the float
+//    val floatSetup: FloatSetup = infrastructure.floatSetup(namespace)
+//    floatSetup.copyTunnelStoreComponents(firewallTunnelStores)
+//    floatSetup.createTunnelSecrets(firewallTunnelSecrets)
+//    floatSetup.generateConfig()
+//    floatSetup.uploadConfig()
+//    val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource())
+//
+//    //configure and deploy the bridge
+//    val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
+//    bridgeSetup.generateBridgeStoreSecrets()
+//    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult)
+//    bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
+//    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
+//    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
+//    bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
+//    bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
+//    bridgeSetup.generateBridgeConfig(deployedArtemis.serviceName, floatDeployment.internalService.getInternalAddress())
+//    bridgeSetup.uploadBridgeConfig()
+//    bridgeSetup.createArtemisSecrets(artemisSecrets)
+//    val bridgeDeployment = bridgeSetup.deploy()
+//
+//    //continue setting up the node
+//    nodeSetup.copyArtemisStores(generatedArtemisStores)
+//    nodeSetup.createArtemisSecrets(artemisSecrets)
+//    nodeSetup.createKeyVaultSecrets(vaultSecrets)
+//    nodeSetup.copyToDriversDir()
+//    nodeSetup.copyToCordappsDir(diskCordapps, gradleCordapps)
+//    nodeSetup.deploy()
 
     //ADD SECOND NODE
 //    val otherX500 = "O=BigCorporation2,L=New York,C=US"
