@@ -55,113 +55,119 @@ class MatchingEngine(
     val match: AtomicBoolean = AtomicBoolean(true)
 
     fun run() {
-        val incommingOrder = orderQueue.take()
+        val incommingOrder = orderQueue.take() ?: return
         // we have a match
         when (incommingOrder.orderSide) {
             OrderSide.BUY -> {
-                //buyside is the aggressor
-                if (orderBook.asks.peek() != null && orderBook.asks.peek().price <= incommingOrder.price) {
-                    //we have a match (tip of asks is less than or equal to tip of bids)
-                    val consumedAsks = LinkedList<Order>()
-                    var quantityLeft = incommingOrder.quantity
-                    //while there is a valid ask to consume, and the price is less or equal to our order, and the order still has some quantity
-                    while (orderBook.asks.peek() != null && (orderBook.asks.peek().price <= incommingOrder.price) && quantityLeft > 0) {
-                        //remove the tip of asks queue
-                        val askToConsume = orderBook.asks.remove()
-                        //if ask has more quantity than bid, take bid quantity, if bid has more than ask take ask
-                        val quantityToConsume = quantityLeft.coerceAtMost(askToConsume.quantity)
-                        if ((askToConsume.quantity - quantityToConsume) == 0L) {
-                            //this ask has been fully consumed
-                            consumedAsks.add(askToConsume)
-                            quantityLeft -= quantityToConsume
-                        } else {
-                            //there is some left over for this ask - add it back to the queue
-                            val quantityLeftOver = askToConsume.quantity - quantityToConsume
-                            //amount of ask that was consumed
-                            val consumedAsk = askToConsume.copy(quantity = askToConsume.quantity - quantityLeftOver)
-                            //amount of ask left over to add back to the queue
-                            val leftOverAsk = askToConsume.copy(quantity = quantityLeftOver)
-                            orderBook.addOrder(leftOverAsk)
-                            consumedAsks.add(consumedAsk)
-                            //if there is some quantity on the ask left, there must be no quantity left on the order
-                            quantityLeft = 0
-                        }
-                    }
-
-                    if (quantityLeft > 0) {
-                        //if the order was not fully consumed by available asks, add to the order queue
-                        orderBook.addOrder(incommingOrder.copy(quantity = quantityLeft))
-                    }
-
-                    consumedAsks.forEach {
-                        tradeQueue.add(
-                            Trade(
-                                //use the consumed ask price, not order price
-                                it.price,
-                                it.quantity,
-                                it.participant,
-                                incommingOrder.participant,
-                                System.currentTimeMillis()
-                            )
-                        )
-                    }
-                } else {
-                    //no match possible this cycle, just add to queue
-                    orderBook.addOrder(incommingOrder)
-                }
-
-
+                performBuySideMatching(incommingOrder)
             }
             OrderSide.SELL -> {
-                //sellside is the aggressor
-                if (orderBook.bids.peek() != null && orderBook.bids.peek().price >= incommingOrder.price) {
-                    //we have a match (highest buy price is greater than current sell order price)
-                    val consumedBids = LinkedList<Order>()
-                    var quantityLeft = incommingOrder.quantity
-                    while (orderBook.bids.peek() != null && (orderBook.bids.peek().price >= incommingOrder.price) && quantityLeft > 0) {
-                        val bidToConsume = orderBook.bids.remove()
-                        //if ask has more quantity than bid, take bid quantity, if bid has more than ask take ask
-                        val quantityToConsume = quantityLeft.coerceAtMost(bidToConsume.quantity)
-                        if ((bidToConsume.quantity - quantityToConsume) == 0L) {
-                            //this bid has been fully consumed
-                            consumedBids.add(bidToConsume)
-                            quantityLeft -= quantityToConsume
-                        } else {
-                            //there is some left over for this bid - add it back to the queue
-                            val quantityLeftOver = bidToConsume.quantity - quantityToConsume
-                            //amount of bid that was consumed
-                            val consumedBid = bidToConsume.copy(quantity = bidToConsume.quantity - quantityLeftOver)
-                            //amount of bid left over to add back to the queue
-                            val leftOverBid = bidToConsume.copy(quantity = quantityLeftOver)
-                            orderBook.addOrder(leftOverBid)
-                            consumedBids.add(consumedBid)
-                            //if there is some quantity on the bid left, there must be no quantity left on the order
-                            quantityLeft = 0
-                        }
-                    }
-                    if (quantityLeft > 0) {
-                        //if the order was not fully consumed by available bids, add to the order queue
-                        orderBook.addOrder(incommingOrder.copy(quantity = quantityLeft))
-                    }
-
-                    consumedBids.forEach {
-                        tradeQueue.add(
-                            Trade(
-                                incommingOrder.price,
-                                it.quantity,
-                                incommingOrder.participant,
-                                it.participant,
-                                System.currentTimeMillis()
-                            )
-                        )
-                    }
-                } else {
-                    //no match possible this cycle
-                    orderBook.addOrder(incommingOrder)
-                }
-
-
+                performSellSideMatching(incommingOrder)
             }
+        }
+    }
+
+    private inline fun performSellSideMatching(incommingOrder: Order) {
+        if (orderBook.bids.peek() != null && orderBook.bids.peek().price >= incommingOrder.price) {
+            var quantityLeft = incommingOrder.quantity
+            while (orderBook.bids.peek() != null && (orderBook.bids.peek().price >= incommingOrder.price) && quantityLeft > 0) {
+                val bidToConsume = orderBook.bids.remove()
+                val quantityToConsume = quantityLeft.coerceAtMost(bidToConsume.quantity)
+                quantityLeft = if ((bidToConsume.quantity - quantityToConsume) == 0L) {
+                    fullyConsumeBidOrderAndEmitTrade(incommingOrder, bidToConsume, quantityLeft, quantityToConsume)
+                } else {
+                    partiallyConsumeBidOrderAndEmitTrade(bidToConsume, quantityToConsume, incommingOrder, quantityLeft)
+                }
+            }
+            if (quantityLeft > 0) {
+                orderBook.addOrder(incommingOrder.copy(quantity = quantityLeft))
+            }
+        } else {
+            orderBook.addOrder(incommingOrder)
+        }
+    }
+
+    private inline fun fullyConsumeBidOrderAndEmitTrade(
+        incommingOrder: Order,
+        orderToConsume: Order,
+        quantityLeft: Long,
+        quantityToConsume: Long
+    ): Long {
+        tradeQueue.add(
+            Trade(
+                incommingOrder.price,
+                orderToConsume.quantity,
+                incommingOrder.participant,
+                orderToConsume.participant,
+                System.currentTimeMillis()
+            )
+        )
+        return quantityLeft - quantityToConsume
+    }
+
+    private inline fun partiallyConsumeBidOrderAndEmitTrade(
+        orderToConsume: Order,
+        quantityToConsume: Long,
+        incommingOrder: Order,
+        quantityLeft: Long
+    ): Long {
+        val quantityLeftOver = orderToConsume.quantity - quantityToConsume
+        val consumedOrder = orderToConsume.copy(quantity = orderToConsume.quantity - quantityLeftOver)
+        val leftOverOrder = orderToConsume.copy(quantity = quantityLeftOver)
+        orderBook.addOrder(leftOverOrder)
+        tradeQueue.add(
+            Trade(
+                incommingOrder.price,
+                consumedOrder.quantity,
+                incommingOrder.participant,
+                consumedOrder.participant,
+                System.currentTimeMillis()
+            )
+        )
+        return 0
+    }
+
+    private inline fun performBuySideMatching(incommingOrder: Order) {
+        val orderSource = orderBook.asks
+        if (orderSource.peek() != null && orderSource.peek().price <= incommingOrder.price) {
+            var quantityLeft = incommingOrder.quantity
+            while (orderSource.peek() != null && (orderSource.peek().price <= incommingOrder.price) && quantityLeft > 0) {
+                val orderToConsume = orderSource.remove()
+                val quantityToConsume = quantityLeft.coerceAtMost(orderToConsume.quantity)
+                if ((orderToConsume.quantity - quantityToConsume) == 0L) {
+                    tradeQueue.add(
+                        Trade(
+                            orderToConsume.price,
+                            orderToConsume.quantity,
+                            orderToConsume.participant,
+                            incommingOrder.participant,
+                            System.currentTimeMillis()
+                        )
+                    )
+                    quantityLeft -= quantityToConsume
+                } else {
+                    val quantityLeftOver = orderToConsume.quantity - quantityToConsume
+                    val consumedOrder = orderToConsume.copy(quantity = orderToConsume.quantity - quantityLeftOver)
+                    val leftOverOrder = orderToConsume.copy(quantity = quantityLeftOver)
+                    orderBook.addOrder(leftOverOrder)
+                    tradeQueue.add(
+                        Trade(
+                            consumedOrder.price,
+                            consumedOrder.quantity,
+                            consumedOrder.participant,
+                            incommingOrder.participant,
+                            System.currentTimeMillis()
+                        )
+                    )
+                    quantityLeft = 0
+                }
+            }
+
+            if (quantityLeft > 0) {
+                orderBook.addOrder(incommingOrder.copy(quantity = quantityLeft))
+            }
+        } else {
+            orderBook.addOrder(incommingOrder)
         }
     }
 }
