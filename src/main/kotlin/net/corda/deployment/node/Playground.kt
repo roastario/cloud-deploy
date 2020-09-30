@@ -14,12 +14,8 @@ import com.microsoft.azure.management.Azure
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
 import com.microsoft.rest.LogLevel
 import freighter.utils.GradleUtils
-import io.kubernetes.client.openapi.apis.CoreV1Api
-import io.kubernetes.client.openapi.models.V1NamespaceBuilder
 import kotlinx.coroutines.runBlocking
-import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
-import net.corda.deployment.node.infrastructure.NodeAzureInfrastructure
 import net.corda.deployment.node.storage.uploadFromByteArray
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
@@ -32,11 +28,45 @@ import kotlin.system.exitProcess
 
 
 class PrepareInfrastructure : CliktCommand(name = "prepareInfrastructure") {
+    val subscriptionId: String by option("-s", "--subscription", help = "Azure Subscription").required()
+
+    val resourceGroupName: String by option("-g", "--resource-group", help = "Azure Resource Group to use").required()
+    val resourceGroupRegion: String by option("-r", "--region", help = "Azure region to create resources within").required()
+
+    val mngAzure: Azure = Azure.configure()
+        .withLogLevel(LogLevel.BODY_AND_HEADERS)
+        .authenticate(AzureCliCredentials.create())
+        .withSubscription(subscriptionId)
+
     override fun run() {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+
+//        val registration = mngAzure.providers().register("Microsoft.DBforPostgreSQL")
+//        while (mngAzure.providers().getByName("Microsoft.DBforPostgreSQL").registrationState() == "Registering") {
+//            println("Waiting for PG DB provider to be registered on subscription")
+//            Thread.sleep(1000)
+//        }
+//        val resourceGroup =
+//            mngAzure.resourceGroups().getByName(resourceGroupName) ?: mngAzure.resourceGroups().define(resourceGroupName).withRegion(
+//                Region.fromName(resourceGroupRegion)
+//            ).create()
+//        val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup)
+//        val infrastructure: AzureInfrastructureDeployer.AzureInfrastructure = azureInfrastructureDeployer.setupInfrastructure()
+//
+//        infrastructure.toPersistable()
+
+
     }
 
 }
+
+//data class PersistableInfrastructure(
+//    val resourceGroupName: String,
+//    val dmzClusterName: String,
+//    val internalClusterName: String,
+//    val clusterNetworkName: String,
+//    val internalSubnetName: String,
+//    val dmzSubnetName: String
+//)
 
 class InitialSetupCommand : CliktCommand(name = "firstNode") {
 
@@ -101,43 +131,50 @@ suspend fun performDeployment(
     diskCordapps: List<File>,
     gradleCordapps: List<File>
 ) {
+
+    val FILE = "C:\\Users\\roast\\AppData\\Roaming\\JetBrains\\IntelliJIdea2020.2\\scratches\\scratch_3.json"
     val mngAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
         .authenticate(AzureCliCredentials.create())
         .withSubscription(subscriptionId)
-
-    val registration = mngAzure.providers().register("Microsoft.DBforPostgreSQL")
-
-
-    while (mngAzure.providers().getByName("Microsoft.DBforPostgreSQL").registrationState() == "Registering") {
-        println("Waiting for PG DB provider to be registered on subscription")
-        Thread.sleep(1000)
-    }
-
     val resourceGroup =
         mngAzure.resourceGroups().getByName(resourceGroupName) ?: mngAzure.resourceGroups().define(resourceGroupName).withRegion(
             Region.fromName(region)
         ).create()
 
+    val namespaceName = "corda-zone-2"
+    val infrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup = resourceGroup)
+    val infrastructure = infrastructureDeployer.setupInfrastructure(File(FILE))
+    infrastructure.createNamespace(namespaceName)
+    val deployedArtemis = infrastructure.setupArtemis(namespaceName)
+    println()
 
-    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup)
-    val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
-    val namespace = "corda-zone"
-    val trustRootConfig = TrustRootConfig(trustRootURL, trustRootPassword)
 
-    val namespaceToCreate = V1NamespaceBuilder()
-        .withKind("Namespace")
-        .withNewMetadata()
-        .withName(namespace)
-        .endMetadata().build()
+//
+//    val registration = mngAzure.providers().register("Microsoft.DBforPostgreSQL")
+//
+//
+//    while (mngAzure.providers().getByName("Microsoft.DBforPostgreSQL").registrationState() == "Registering") {
+//        println("Waiting for PG DB provider to be registered on subscription")
+//        Thread.sleep(1000)
+//    }
+//
 
-    infrastructure.clusters.dmzApiSource().run {
-        CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
-    }
+//
+//
+//    val azureInfrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup)
+//    val infrastructure = azureInfrastructureDeployer.setupInfrastructure()
+//
+//    val persistableInfrastructure = infrastructure.toPersistable()
 
-    infrastructure.clusters.nonDmzApiSource().run {
-        CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
-    }
+
+//    val persistableInfrastructure = objectMapper.readValue<PersistableInfrastructure>(
+//        File(FILE),
+//        PersistableInfrastructure::class.java
+//    )
+//    val infrastructure = AzureInfrastructureDeployer.AzureInfrastructure.fromPersistable(persistableInfrastructure, mngAzure)
+//    println(objectMapper.writeValueAsString(persistableInfrastructure))
+
 
 //    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
 //    //configure key vault for node
@@ -145,15 +182,11 @@ suspend fun performDeployment(
 //    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
 //    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
 
-    val nodeArtemisShare = infrastructure.internalShareCreator("node-artemis-files")
-    val bridgeArtemisShare = infrastructure.internalShareCreator("bridge-artemis-files")
 
-    //configure and deploy artemis
-    val artemisSetup: ArtemisSetup = infrastructure.artemisSetup(namespace)
-    val artemisSecrets = artemisSetup.generateArtemisSecrets()
-    val generatedArtemisStores = artemisSetup.generateArtemisStores(nodeArtemisShare, bridgeArtemisShare)
-    val configuredArtemisBroker = artemisSetup.configureArtemisBroker()
-    val deployedArtemis = artemisSetup.deploy(useAzureDiskForData = true)
+//    val deployedArtemis = infrastructure.setupArtemis(namespaceName)
+
+
+    println()
 
 //    //configure and register the node
 //    val nodeSetup: NodeSetup = nodeSpecificInfra.nodeSetup(namespace)
@@ -167,6 +200,8 @@ suspend fun performDeployment(
 //        "u",
 //        "p"
 //    )
+//    val trustRootConfig = TrustRootConfig(trustRootURL, trustRootPassword)
+
 //    nodeSetup.uploadNodeConfig()
 //    nodeSetup.createNodeDatabaseSecrets()
 //    val nodeStoreSecrets = nodeSetup.createNodeKeyStoreSecrets()
@@ -246,10 +281,12 @@ suspend fun performDeployment(
 //
 //    bridgeDeployment.restart(infrastructure.clusters.nonDmzApiSource())
 
+//    persist(objectMapper, infrastructure)
     exitProcess(0)
 
 
 }
+
 
 @ExperimentalUnsignedTypes
 fun main(args: Array<String>) {

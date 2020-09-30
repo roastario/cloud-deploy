@@ -61,7 +61,7 @@ class BridgeSetup(
             throw IllegalStateException("must generate bridge ssl secrets before importing node tls keys")
         }
         val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${RandomStringUtils.randomAlphanumeric(8).toLowerCase()}"
-        val bridgeCertificatesShare = shareCreator.createDirectoryFor("bridge-certs")
+        val bridgeCertificatesShare = shareCreator.createDirectoryFor("bridge-certs", api)
         val importNodeKeyStoreToBridgeJob = importNodeKeyStoreToBridgeJob(
             importNodeToBridgeJobName,
             nodeStoreSecrets.secretName,
@@ -92,7 +92,7 @@ class BridgeSetup(
     }
 
     fun copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult: InitialRegistrationResult) {
-        val networkShare = shareCreator.createDirectoryFor("bridge-network-params")
+        val networkShare = shareCreator.createDirectoryFor("bridge-network-params", api)
         val bridgeNetworkParamsFileReference =
             networkShare.modernClient.rootDirectoryClient.getFileClient(BridgeConfigParams.BRIDGE_NETWORK_PARAMETERS_FILENAME)
         bridgeNetworkParamsFileReference.createFrom(initialRegistrationResult.networkParameters)
@@ -103,7 +103,7 @@ class BridgeSetup(
         val trustStore: ShareFileClient = tunnelStores.trustStore
         val bridgeTunnelKeyStore = tunnelStores.bridgeStore
 
-        val bridgeTunnelShare = shareCreator.createDirectoryFor("bridge-tunnel")
+        val bridgeTunnelShare = shareCreator.createDirectoryFor("bridge-tunnel", api)
         val bridgeTunnelTrustStoreFileReference =
             bridgeTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
         val bridgeTunnelKeyStoreFileReference =
@@ -128,7 +128,7 @@ class BridgeSetup(
         val trustStore = artemisStores.trustStore
         val bridgeArtemisKeyStore = artemisStores.bridgeStore
 
-        val bridgeArtemisStoresShare = shareCreator.createDirectoryFor("bridge-artemis-stores")
+        val bridgeArtemisStoresShare = shareCreator.createDirectoryFor("bridge-artemis-stores", api)
         val bridgeArtemisKeyStoreFileReference =
             bridgeArtemisStoresShare.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_BRIDGE_KEYSTORE_FILENAME)
         val bridgeArtemisTrustStoreFileReference =
@@ -175,7 +175,7 @@ class BridgeSetup(
         if (this.config == null) {
             throw IllegalStateException("must generate config before uploading")
         }
-        val bridgeConfigShare = shareCreator.createDirectoryFor("bridge-config")
+        val bridgeConfigShare = shareCreator.createDirectoryFor("bridge-config", api)
         val bridgeConfigFileReference =
             bridgeConfigShare.modernClient.rootDirectoryClient.getFileClient(BridgeConfigParams.BRIDGE_CONFIG_FILENAME)
         bridgeConfigFileReference.uploadFromByteArray(config!!.toByteArray(Charsets.UTF_8))

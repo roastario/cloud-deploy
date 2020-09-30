@@ -15,7 +15,8 @@ import net.corda.deployments.node.config.TunnelConfigParams
 
 open class FloatSetup(
     val namespace: String,
-    val shareCreator: AzureFileShareCreator
+    val shareCreator: AzureFileShareCreator,
+    val apiSource: () -> ApiClient
 ) {
 
 
@@ -29,7 +30,7 @@ open class FloatSetup(
     fun copyTunnelStoreComponents(tunnelStores: GeneratedTunnelStores): FloatTunnelComponents {
         val trustStore = tunnelStores.trustStore
         val keyStore = tunnelStores.floatStore
-        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel")
+        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel", api = apiSource)
         val trustStoreReference =
             floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
         val keyStoreReference =
@@ -64,7 +65,7 @@ open class FloatSetup(
     }
 
     fun uploadConfig() {
-        val configDir = shareCreator.createDirectoryFor("float-config")
+        val configDir = shareCreator.createDirectoryFor("float-config", apiSource)
         configDir.modernClient.rootDirectoryClient.getFileClient(FloatConfigParams.FLOAT_CONFIG_FILENAME)
             .uploadFromByteArray(config.toByteArray(Charsets.UTF_8))
         this.configShare = configDir

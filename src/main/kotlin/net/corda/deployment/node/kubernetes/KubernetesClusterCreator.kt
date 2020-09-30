@@ -14,6 +14,7 @@ import io.kubernetes.client.openapi.ApiException
 import io.kubernetes.client.util.ClientBuilder
 import io.kubernetes.client.util.KubeConfig
 import net.corda.deployment.node.networking.ClusterNetwork
+import net.corda.deployment.node.networking.PersistableNetwork
 import net.corda.deployment.node.principals.PrincipalAndCredentials
 import org.apache.commons.lang3.RandomStringUtils
 import java.io.ByteArrayOutputStream
@@ -25,8 +26,6 @@ class KubernetesClusterCreator(
     val resourceGroup: ResourceGroup
 ) {
     fun createClusters(
-        p2pIpAddress: PublicIPAddress,
-        rpcIPAddress: PublicIPAddress,
         servicePrincipal: PrincipalAndCredentials,
         network: ClusterNetwork,
         dnsSuffix: String = RandomStringUtils.randomAlphanumeric(12).toLowerCase()
@@ -65,7 +64,6 @@ class KubernetesClusterCreator(
             .withPodCidr("10.244.0.0/16")
             .withDockerBridgeCidr("172.17.0.1/16")
             .attach()
-//            .enablePodSecurityPolicies()
             .enableRBAC()
 
         val nodeClusterCreate = azure.kubernetesClusters()
@@ -97,7 +95,6 @@ class KubernetesClusterCreator(
             .withPodCidr("10.244.0.0/16")
             .withDockerBridgeCidr("172.17.0.1/16")
             .attach()
-//            .enablePodSecurityPolicies()
             .enableRBAC()
 
 
@@ -126,18 +123,22 @@ class KubernetesClusterCreator(
         }
 
         return floatClusterFuture.thenCombineAsync<KubernetesCluster, Clusters>(nodeClusterFuture) { floatCluster, nodeCluster ->
-            Clusters(nodeCluster, floatCluster, network, nodeSubnetName, floatSubnetName)
+            Clusters(nodeCluster, floatCluster, network)
         }.get()
     }
 
 }
 
+data class PersistableClusters(
+    val nodeClusterId: String,
+    val dmzClusterId: String,
+    val clusterNetwork: PersistableNetwork
+)
+
 data class Clusters(
     val nodeCluster: KubernetesCluster,
     val floatCluster: KubernetesCluster,
-    val clusterNetwork: ClusterNetwork,
-    val nodeSubnetName: String,
-    val floatSubnetName: String
+    val clusterNetwork: ClusterNetwork
 ) {
     fun dmzApiSource(): () -> ApiClient {
         return {
@@ -154,18 +155,26 @@ data class Clusters(
             }.also { it.isDebugging = false }
         }
     }
+
+    fun toPersistable(): PersistableClusters {
+        val persistableNetwork = clusterNetwork.toPersistable()
+        return PersistableClusters(nodeCluster.id(), floatCluster.id(), persistableNetwork)
+    }
+
+    companion object {
+        fun fromPersistable(p: PersistableClusters, mgmAzure: Azure): Clusters {
+            val nodeCluster = mgmAzure.kubernetesClusters().getById(p.nodeClusterId)
+            val dmzCluster = mgmAzure.kubernetesClusters().getById(p.dmzClusterId)
+            val clusterNetwork = ClusterNetwork.fromPersistable(p.clusterNetwork, mgmAzure)
+            return Clusters(nodeCluster, dmzCluster, clusterNetwork)
+        }
+    }
 }
 
 
 private fun KubernetesCluster.DefinitionStages.WithCreate.enableRBAC(): KubernetesCluster.DefinitionStages.WithCreate {
     val parent = this as KubernetesClusterImpl
     parent.inner().withEnableRBAC(true)
-    return parent
-}
-
-private fun KubernetesCluster.DefinitionStages.WithCreate.enablePodSecurityPolicies(): KubernetesCluster.DefinitionStages.WithCreate {
-    val parent = this as KubernetesClusterImpl
-    parent.inner().withEnablePodSecurityPolicy(true)
     return parent
 }
 

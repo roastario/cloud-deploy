@@ -2,6 +2,7 @@ package net.corda.deployment.node.float
 
 import com.microsoft.azure.management.resources.ResourceGroup
 import io.kubernetes.client.custom.IntOrString
+import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.openapi.models.V1Deployment
 import io.kubernetes.client.openapi.models.V1ServiceBuilder
 import io.kubernetes.client.openapi.models.V1ServicePortBuilder
@@ -13,9 +14,10 @@ class AzureFloatSetup(
     namespace: String,
     shareCreator: AzureFileShareCreator,
     val clusterNetwork: ClusterNetwork,
-    val resourceGroup: ResourceGroup
+    val resourceGroup: ResourceGroup,
+    apiSource: () -> ApiClient
 ) :
-    FloatSetup(namespace, shareCreator) {
+    FloatSetup(namespace, shareCreator, apiSource) {
 
     override fun buildExternalService(deployment: V1Deployment): ExternalFloatService {
         val externalIp = clusterNetwork.p2pAddress

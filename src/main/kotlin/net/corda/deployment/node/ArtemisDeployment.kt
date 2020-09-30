@@ -4,14 +4,15 @@ import com.microsoft.azure.management.compute.Disk
 import io.kubernetes.client.custom.IntOrString
 import io.kubernetes.client.custom.Quantity
 import io.kubernetes.client.openapi.models.*
+import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployments.node.config.ArtemisConfigParams
 
 private const val ARTEMIS_PORT_NAME = "artemis-port"
 
 fun createArtemisDeployment(
     devNamespace: String,
-    configuredArtemisBroker: ConfiguredArtemisBroker,
-    storesShare: GeneratedArtemisStores,
+    brokerDirectory: AzureFilesDirectory,
+    storesShare: AzureFilesDirectory,
     dataDisk: Disk?
 ): V1Deployment {
     val dataMountName = "artemis-data"
@@ -37,7 +38,7 @@ fun createArtemisDeployment(
         .withNewSpec()
         .addNewContainer()
         .withName("artemis")
-        .withImage("corda/enterprise-setup:4.5")
+        .withImage("corda/enterprise-setup-4.5.1:latest")
         .withImagePullPolicy("IfNotPresent")
         .withCommand("run-artemis")
         .withEnv(V1EnvVarBuilder().withName("JAVA_ARGS").withValue("-XX:+UseParallelGC -Xms512M -Xmx768M").build())
@@ -72,8 +73,8 @@ fun createArtemisDeployment(
         .endContainer()
         .withVolumes(
             listOfNotNull(
-                configuredArtemisBroker.baseDir.toK8sMount(brokerBaseDirMountName, false),
-                storesShare.outputDir.toK8sMount(storesMountName, true),
+                brokerDirectory.toK8sMount(brokerBaseDirMountName, false),
+                storesShare.toK8sMount(storesMountName, true),
                 dataDisk?.let {
                     V1VolumeBuilder()
                         .withName(dataMountName)

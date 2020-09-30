@@ -6,10 +6,19 @@ import com.microsoft.azure.management.network.PublicIPAddress
 import com.microsoft.azure.management.network.ServiceEndpointPropertiesFormat
 import com.microsoft.azure.management.resources.ResourceGroup
 import com.microsoft.azure.management.resources.fluentcore.arm.Region
-import net.corda.deployment.node.database.PostgresServerCreator
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.ADDRESS_SPACE
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.DMZ_CIDR
 import net.corda.deployment.node.networking.ClusterNetwork.Companion.INTERNAL_CIDR
+
+class PersistableNetwork(
+    val nodeSubnetName: String,
+    val floatSubnetName: String,
+    val networkId: String,
+    val p2pAddressId: String,
+    val controlAddressId: String
+) {
+
+}
 
 data class ClusterNetwork(
     val nodeSubnetName: String,
@@ -25,6 +34,19 @@ data class ClusterNetwork(
         const val DMZ_IP_PREFIX = "192.168.2"
         const val INTERNAL_CIDR: String = "192.168.1.0/24"
         const val INTERNAL_IP_PREFIX = "192.168.1"
+
+        fun fromPersistable(p: PersistableNetwork, mgmAzure: Azure): ClusterNetwork {
+            val nodeSubnetName: String = p.nodeSubnetName
+            val floatSubnetName: String = p.floatSubnetName
+            val network = mgmAzure.networks().getById(p.networkId)
+            val p2pAddress = mgmAzure.publicIPAddresses().getById(p.p2pAddressId)
+            val controlAddress = mgmAzure.publicIPAddresses().getById(p.controlAddressId)
+            return ClusterNetwork(nodeSubnetName, floatSubnetName, network, p2pAddress, controlAddress)
+        }
+    }
+
+    fun toPersistable(): PersistableNetwork {
+        return PersistableNetwork(nodeSubnetName, floatSubnetName, createdNetwork.id(), p2pAddress.id(), controlAddress.id())
     }
 
     @ExperimentalUnsignedTypes

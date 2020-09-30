@@ -77,7 +77,7 @@ class NodeSetup(
     }
 
     fun uploadNodeConfig(): AzureFilesDirectory {
-        val configDirectory = shareCreator.createDirectoryFor("node-config")
+        val configDirectory = shareCreator.createDirectoryFor("node-config", api)
         configDirectory.modernClient.rootDirectoryClient.getFileClient("node.conf")
             .uploadFromByteArray(generatedNodeConfig!!.toByteArray(Charsets.UTF_8))
         return configDirectory.also { this.configDirectory = it }
@@ -140,7 +140,7 @@ class NodeSetup(
 
 
     fun copyArtemisStores(artemisStores: GeneratedArtemisStores) {
-        val nodeArtemisDir = shareCreator.createDirectoryFor("node-artemis-stores-${nodeId}")
+        val nodeArtemisDir = shareCreator.createDirectoryFor("node-artemis-stores-${nodeId}", api)
 
         val nodeArtemisTrustStore =
             nodeArtemisDir.modernClient.rootDirectoryClient.getFileClient(ArtemisConfigParams.ARTEMIS_TRUSTSTORE_FILENAME)
@@ -160,8 +160,8 @@ class NodeSetup(
     ): InitialRegistrationResult {
         val jobName = "initial-registration-${nodeId}"
 
-        val initialRegResultDir = shareCreator.createDirectoryFor("node-initial-reg-result")
-        val networkParamsDir = shareCreator.createDirectoryFor("network-params-result")
+        val initialRegResultDir = shareCreator.createDirectoryFor("node-initial-reg-result", api)
+        val networkParamsDir = shareCreator.createDirectoryFor("network-params-result", api)
 
         val initialRegistrationJob = initialRegistrationJob(
             jobName,
@@ -185,7 +185,7 @@ class NodeSetup(
     }
 
     fun copyToDriversDir() {
-        val driversDirShare = shareCreator.createDirectoryFor("node-drivers")
+        val driversDirShare = shareCreator.createDirectoryFor("node-drivers", api)
         val allDriverJars = (hsm.requiredDriverJars + dbParams.type.driverDependencies).flatMap {
             GradleUtils.getArtifactAndDependencies(it.driverGroup, it.driverArtifact, it.driverVersion)
         }
@@ -223,7 +223,7 @@ class NodeSetup(
     }
 
     fun copyToCordappsDir(cordapps: List<File>, gradleCordapps: List<File>) {
-        val cordappsDir = shareCreator.createDirectoryFor("node-cordapps")
+        val cordappsDir = shareCreator.createDirectoryFor("node-cordapps", api)
 
         (gradleCordapps + cordapps).forEach { cordapp ->
             println("Uploading cordapp: ${cordapp.absolutePath}")

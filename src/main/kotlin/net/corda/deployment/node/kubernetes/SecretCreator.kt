@@ -60,6 +60,28 @@ class SecretCreator {
             }
         }
 
+        fun secretExists(
+            azureFilesSecretName: String,
+            namespace: String,
+            clientSource: () -> ApiClient
+        ): Boolean {
+            val client = clientSource()
+            val coreV1Api = CoreV1Api(client)
+            val secretList = coreV1Api.listNamespacedSecret(
+                namespace,
+                null,
+                null,
+                null,
+                "metadata.name=$azureFilesSecretName",
+                null,
+                null,
+                null,
+                null,
+                null
+            )
+            return secretList.items.isNotEmpty()
+        }
+
     }
 }
 

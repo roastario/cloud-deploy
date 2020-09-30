@@ -1,0 +1,67 @@
+{
+  "clusters": {
+    "nodeClusterId": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourcegroups/testing6/providers/Microsoft.ContainerService/managedClusters/corda-cluster-internal",
+    "dmzClusterId": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourcegroups/testing6/providers/Microsoft.ContainerService/managedClusters/corda-cluster-dmz",
+    "clusterNetwork": {
+      "nodeSubnetName": "internalClusterSubNet",
+      "floatSubnetName": "dmzClusterSubNet",
+      "networkId": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Network/virtualNetworks/corda-vnet",
+      "p2pAddressId": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Network/publicIPAddresses/p2p",
+      "controlAddressId": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Network/publicIPAddresses/rpc"
+    }
+  },
+  "resourceGroupName": "testing6",
+  "internalShareCreators": [
+    {
+      "id": "internal-corda-zone-2-artemisfiles",
+      "resourceGroup": "testing6",
+      "namespace": "corda-zone-2",
+      "instanceSpecificSuffix": "artemisfiles"
+    }
+  ],
+  "dmzShareCreators": [],
+  "artemisSecrets": {
+    "secretName": "artemis-secrets",
+    "keyStorePasswordKey": "artemisstorepass",
+    "trustStorePasswordKey": "artemistrustpass",
+    "clusterPasswordKey": "artemisclusterpass"
+  },
+  "artemisDirShare": {
+    "shareName": "artemis-files",
+    "storageAccount": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Storage/storageAccounts/artemisfiles",
+    "storageSecrets": {
+      "secretName": "files-secret-artemisfiles",
+      "storageAccountNameKey": "azurestorageaccountname",
+      "storageAccountKeyKey": "azurestorageaccountkey"
+    }
+  },
+  "nodeArtemisDirShare": {
+    "shareName": "node-artemis-files",
+    "storageAccount": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Storage/storageAccounts/artemisfiles",
+    "storageSecrets": {
+      "secretName": "files-secret-artemisfiles",
+      "storageAccountNameKey": "azurestorageaccountname",
+      "storageAccountKeyKey": "azurestorageaccountkey"
+    }
+  },
+  "bridgeArtemisDirShare": {
+    "shareName": "bridge-artemis-files",
+    "storageAccount": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Storage/storageAccounts/artemisfiles",
+    "storageSecrets": {
+      "secretName": "files-secret-artemisfiles",
+      "storageAccountNameKey": "azurestorageaccountname",
+      "storageAccountKeyKey": "azurestorageaccountkey"
+    }
+  },
+  "artemisStoresGenerated": true,
+  "artemisBrokerDir": {
+    "shareName": "artemis-broker",
+    "storageAccount": "/subscriptions/c412941a-4362-4923-8737-3d33a8d1cdc6/resourceGroups/testing6/providers/Microsoft.Storage/storageAccounts/artemisfiles",
+    "storageSecrets": {
+      "secretName": "files-secret-artemisfiles",
+      "storageAccountNameKey": "azurestorageaccountname",
+      "storageAccountKeyKey": "azurestorageaccountkey"
+    }
+  },
+  "artemisBrokerConfigured": true
+}

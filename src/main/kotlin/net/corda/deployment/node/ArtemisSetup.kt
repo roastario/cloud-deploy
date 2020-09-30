@@ -10,7 +10,6 @@ import io.kubernetes.client.openapi.models.V1Deployment
 import io.kubernetes.client.openapi.models.V1Service
 import net.corda.deployment.node.kubernetes.SecretCreator
 import net.corda.deployment.node.kubernetes.simpleApply
-import net.corda.deployment.node.storage.AzureFileShareCreator
 import net.corda.deployment.node.storage.AzureFilesDirectory
 import net.corda.deployment.node.storage.enforceExistence
 import net.corda.deployments.node.config.ArtemisConfigParams
@@ -20,14 +19,11 @@ import kotlin.IllegalStateException
 class ArtemisSetup(
     private val azure: Azure,
     private val resourceGroup: ResourceGroup,
-    private val shareCreator: AzureFileShareCreator,
     private val namespace: String,
     private val apiSource: () -> ApiClient
 ) {
 
-    private var configuredBroker: ConfiguredArtemisBroker? = null
-    private var generatedStores: GeneratedArtemisStores? = null
-    private var secrets: ArtemisSecrets? = null
+//    private var secrets: ArtemisSecrets? = null
 
     private fun createDiskForArtemis(): Disk {
         return azure.disks().define("artemis-disk")
@@ -43,82 +39,74 @@ class ArtemisSetup(
         val artemisSecretsName = "artemis-secrets"
         val artemisStorePassSecretKey = "artemisstorepass"
         val artemisTrustPassSecretKey = "artemistrustpass"
-        val artemisClusterPassSecretKey = "artemisclusterpass";
-        val artemisSecret = SecretCreator.createStringSecret(
-            artemisSecretsName,
-            listOf(
-                artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-                artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
-                artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
-            ).toMap(),
-            namespace,
-            apiSource
-        )
-        secrets = ArtemisSecrets(
+        val artemisClusterPassSecretKey = "artemisclusterpass"
+        if (!SecretCreator.secretExists(artemisSecretsName, namespace, apiSource)) {
+            SecretCreator.createStringSecret(
+                artemisSecretsName,
+                listOf(
+                    artemisStorePassSecretKey to RandomStringUtils.randomAlphanumeric(32),
+                    artemisTrustPassSecretKey to RandomStringUtils.randomAlphanumeric(32),
+                    artemisClusterPassSecretKey to RandomStringUtils.randomAlphanumeric(32)
+                ).toMap(),
+                namespace,
+                apiSource
+            )
+        }
+        return ArtemisSecrets(
             artemisSecretsName,
             artemisStorePassSecretKey,
             artemisTrustPassSecretKey,
             artemisClusterPassSecretKey
         )
-        return secrets as ArtemisSecrets
     }
 
     suspend fun generateArtemisStores(
-        nodeArtemisShare: AzureFileShareCreator,
-        bridgeArtemisShare: AzureFileShareCreator
-    ): GeneratedArtemisStores {
-        if (secrets == null) {
-            throw IllegalStateException("Must generate artemis secrets before generating stores")
-        }
-        val workingDir = shareCreator.createDirectoryFor("artemis-stores")
+        artemisSecrets: ArtemisSecrets,
+        artemisShare: AzureFilesDirectory,
+        nodeArtemisShare: AzureFilesDirectory,
+        bridgeArtemisShare: AzureFilesDirectory
+    ) {
         val jobName = "generate-artemis-stores"
         val generateArtemisStoresJob = generateArtemisStoresJob(
             jobName,
-            secrets!!,
-            workingDir,
+            artemisSecrets,
+            artemisShare,
             nodeArtemisShare,
             bridgeArtemisShare
         )
         simpleApply.create(generateArtemisStoresJob, namespace, apiSource)
         waitForJob(generateArtemisStoresJob, namespace, apiSource)
         dumpLogsForJob(generateArtemisStoresJob, namespace, apiSource)
-        return GeneratedArtemisStores(workingDir).also {
-            this.generatedStores = it
-        }
     }
 
-    suspend fun configureArtemisBroker(): ConfiguredArtemisBroker {
-        if (generatedStores == null) {
-            throw IllegalStateException("Must generate artemis stores before configuring broker")
-        }
-        val workingDirShare = shareCreator.createDirectoryFor("artemis-broker")
+    suspend fun configureArtemisBroker(
+        artemisSecrets: ArtemisSecrets,
+        artemisBrokerDir: AzureFilesDirectory,
+        artemisStoresDir: AzureFilesDirectory
+    ) {
         val jobName = "configure-artemis-broker"
         val configureArtemisJob = configureArtemis(
             jobName,
-            secrets!!,
-            generatedStores!!,
-            workingDirShare
+            artemisSecrets,
+            artemisStoresDir,
+            artemisBrokerDir
         )
         simpleApply.create(configureArtemisJob, namespace, apiSource)
         waitForJob(configureArtemisJob, namespace, apiSource)
         dumpLogsForJob(configureArtemisJob, namespace, apiSource)
-        return ConfiguredArtemisBroker(workingDirShare).also {
-            this.configuredBroker = it
-        }
     }
 
     fun deploy(
+        storesDirectory: AzureFilesDirectory,
+        brokerDirectory: AzureFilesDirectory,
         useAzureDiskForData: Boolean = false
     ): ArtemisDeployment {
-        if (configuredBroker == null) {
-            throw IllegalStateException("Must configure artemis broker before deploying")
-        }
         val disk = if (useAzureDiskForData) {
             createDiskForArtemis()
         } else {
             null
         }
-        val deployment = createArtemisDeployment(namespace, configuredBroker!!, generatedStores!!, disk)
+        val deployment = createArtemisDeployment(namespace, brokerDirectory, storesDirectory, disk)
         val service = createArtemisService(deployment)
         simpleApply.create(deployment, namespace, apiSource)
         simpleApply.create(service, namespace, apiSource)

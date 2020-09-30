@@ -64,7 +64,7 @@ class FirewallSetup(
             throw IllegalStateException("must generate tunnel secrets before generating tunnel stores")
         }
 
-        val tunnelStoresShare = shareCreator.createDirectoryFor("tunnel-stores")
+        val tunnelStoresShare = shareCreator.createDirectoryFor("tunnel-stores", api)
         val generateTunnelStoresJobName = "gen-tunnel-stores"
         val generateTunnelStoresJob = generateTunnelStores(
             generateTunnelStoresJobName,
