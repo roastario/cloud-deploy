@@ -64,9 +64,10 @@ class AzureInfrastructureDeployer(
         internal val clusters: Clusters,
         internal val azure: Azure,
         internal val resourceGroup: ResourceGroup,
-        internal val fileToPersistTo: File
+        private val fileToPersistTo: File
     ) {
 
+        private var firewallSecrets: FirewallTunnelSecrets? = null
         private var artemisDirectories: ArtemisDirectories? = null
         private var artemisDeployment: ArtemisDeployment? = null
         private var artemisConfigured: Boolean = false
@@ -119,6 +120,16 @@ class AzureInfrastructureDeployer(
                 allowAllFailures {
                     CoreV1Api(this()).createNamespace(namespaceToCreate, null, null, null)
                 }
+            }
+
+        }
+
+        suspend fun tunnelSecrets(namespace: String) {
+
+            if (this.firewallSecrets == null) {
+                val firewallSetup = firewallSetup(namespace)
+                this.firewallSecrets =
+                    firewallSetup.generateFirewallTunnelSecrets(clusters.nonDmzApiSource(), clusters.dmzApiSource())
             }
 
         }

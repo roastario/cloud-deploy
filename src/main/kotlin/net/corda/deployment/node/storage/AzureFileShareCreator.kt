@@ -48,32 +48,34 @@ class AzureFileShareCreator(
                 .create()
     }
 
-    fun createSecrets(api: () -> ApiClient): AzureFileSecrets {
+    fun createSecrets(vararg apis: () -> ApiClient): AzureFileSecrets {
         val azureFilesSecretName = "files-secret-${instanceSpecificSuffix}"
         val storageAccountNameKey = "azurestorageaccountname"
         val storageAccountKeyKey = "azurestorageaccountkey"
-        if (!SecretCreator.secretExists(azureFilesSecretName, namespace, api)) {
-            SecretCreator.createStringSecret(
-                azureFilesSecretName,
-                listOf(
-                    storageAccountNameKey to storageAccount.value.name(),
-                    storageAccountKeyKey to storageAccount.value.keys[0].value()
-                ).toMap(),
-                namespace,
-                api
-            )
+        apis.forEach { api ->
+            if (!SecretCreator.secretExists(azureFilesSecretName, namespace, api)) {
+                SecretCreator.createStringSecret(
+                    azureFilesSecretName,
+                    listOf(
+                        storageAccountNameKey to storageAccount.value.name(),
+                        storageAccountKeyKey to storageAccount.value.keys[0].value()
+                    ).toMap(),
+                    namespace,
+                    api
+                )
+            }
         }
         return AzureFileSecrets(azureFilesSecretName, storageAccountNameKey, storageAccountKeyKey)
     }
 
     fun createDirectoryFor(
         directoryName: String,
-        api: () -> ApiClient
+        vararg apis: () -> ApiClient
     ): AzureFilesDirectory {
         val storageAccount = storageAccount.value
         val cloudFileShare = getLegacyClient(storageAccount, directoryName)
         val modernClient = getModernClient(storageAccount, directoryName)
-        val secrets = createSecrets(api)
+        val secrets = createSecrets(*apis)
         return AzureFilesDirectory(
             directoryName,
             cloudFileShare.also { it.createIfNotExists() },
