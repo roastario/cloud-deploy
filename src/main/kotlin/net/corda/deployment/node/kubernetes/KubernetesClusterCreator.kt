@@ -17,19 +17,37 @@ import net.corda.deployment.node.networking.ClusterNetwork
 import net.corda.deployment.node.networking.PersistableNetwork
 import net.corda.deployment.node.principals.PrincipalAndCredentials
 import org.apache.commons.lang3.RandomStringUtils
+import org.apache.maven.artifact.versioning.ComparableVersion
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.util.concurrent.CompletableFuture
 
 class KubernetesClusterCreator(
     val azure: Azure,
-    val resourceGroup: ResourceGroup
+    val resourceGroup: ResourceGroup,
+    val kubernetesMajorVersionGroup: String = "1",
+    val kubernetesMinorVersionGroup: String = "16"
 ) {
     fun createClusters(
         servicePrincipal: PrincipalAndCredentials,
         network: ClusterNetwork,
         dnsSuffix: String = RandomStringUtils.randomAlphanumeric(12).toLowerCase()
     ): Clusters {
+
+        val orchestratorVersions =
+            (azure.kubernetesClusters().manager().inner().containerServices())
+                .listOrchestrators(resourceGroup.regionName())
+                .orchestrators()
+                .asSequence()
+                .filterNot { it.isPreview == true }
+                .filter { it.orchestratorType() == "Kubernetes" }
+                .map { ComparableVersion(it.orchestratorVersion()) }
+                .sortedDescending()
+                .filter { it.getVersionComponent(0) == kubernetesMajorVersionGroup && it.getVersionComponent(1) == kubernetesMinorVersionGroup }
+                .toList()
+
+        val versionToUse =
+            orchestratorVersions.first().canonical
 
         val createdNetwork = network.createdNetwork
         val floatSubnetName = network.floatSubnetName
@@ -39,7 +57,7 @@ class KubernetesClusterCreator(
             .define("corda-cluster-dmz")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
-            .withVersion("1.16.10")
+            .withVersion(versionToUse)
             .withRootUsername("cordamanager")
             .withSshKey(String(ByteArrayOutputStream().also {
                 KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")
@@ -70,7 +88,7 @@ class KubernetesClusterCreator(
             .define("corda-cluster-internal")
             .withRegion(resourceGroup.region())
             .withExistingResourceGroup(resourceGroup)
-            .withVersion("1.16.10")
+            .withVersion(versionToUse)
             .withRootUsername("cordamanager")
             .withSshKey(String(ByteArrayOutputStream().also {
                 KeyPair.genKeyPair(JSch(), KeyPair.RSA).writePublicKey(it, "")

@@ -15,6 +15,13 @@ class FirewallSetup(
     private val shareCreator: AzureFileShareCreator
 ) {
 
+    companion object {
+        const val BRIDGE_COPY_TO_DIR_ENV_NAME = "BRIDGE_TUNNEL_STORES_DIR"
+        const val FLOAT_COPY_TO_DIR_ENV_NAME = "FLOAT_TUNNEL_STORES_DIR"
+        const val BRIDGE_COPY_STORES_TO_DIR = "/tmp/bridgeStores"
+        const val FLOAT_COPY_STORES_TO_DIR = "/tmp/floatStores"
+    }
+
     private var tunnelStores: GeneratedTunnelStores? = null
     private var tunnelSecrets: FirewallTunnelSecrets? = null
 
@@ -46,39 +53,59 @@ class FirewallSetup(
         tunnelEntryPasswordAndKey: Pair<String, String>,
         tunnelKeyStorePasswordAndKey: Pair<String, String>,
         tunnelTrustStorePasswordAndKey: Pair<String, String>,
-        dmzApiSource: () -> ApiClient
+        api: () -> ApiClient
     ) {
+        if (SecretCreator.secretExists(tunnelSecretName, namespace, api)) {
+            SecretCreator.delete(tunnelSecretName, namespace, api)
+        }
         SecretCreator.createStringSecret(
             tunnelSecretName,
             listOf(
                 tunnelEntryPasswordAndKey,
                 tunnelKeyStorePasswordAndKey,
                 tunnelTrustStorePasswordAndKey
-            ).toMap()
-            , namespace, dmzApiSource
+            ).toMap(), namespace, api
         )
     }
 
-    suspend fun generateTunnelStores(api: () -> ApiClient): GeneratedTunnelStores {
-        if (tunnelSecrets == null) {
-            throw IllegalStateException("must generate tunnel secrets before generating tunnel stores")
-        }
+//    suspend fun generateTunnelStores(api: () -> ApiClient): GeneratedTunnelStores {
+//        if (tunnelSecrets == null) {
+//            throw IllegalStateException("must generate tunnel secrets before generating tunnel stores")
+//        }
+//
+//        val tunnelStoresShare = shareCreator.createDirectoryFor("tunnel-stores", api)
+//        val generateTunnelStoresJobName = "gen-tunnel-stores"
+//        val generateTunnelStoresJob = generateTunnelStores(
+//            generateTunnelStoresJobName,
+//            tunnelSecrets!!,
+//            tunnelStoresShare
+//        )
+//
+//        simpleApply.create(generateTunnelStoresJob, namespace, api)
+//        waitForJob(generateTunnelStoresJob, namespace, api)
+//        dumpLogsForJob(generateTunnelStoresJob, namespace, api)
+//
+//        return GeneratedTunnelStores(tunnelStoresShare).also {
+//            this.tunnelStores = it
+//        }
+//    }
 
-        val tunnelStoresShare = shareCreator.createDirectoryFor("tunnel-stores", api)
+    suspend fun generateTunnelStores2(
+        tunnelSecrets: FirewallTunnelSecrets,
+        floatTunnelStoresDir: AzureFilesDirectory,
+        bridgeTunnelStoresDir: AzureFilesDirectory,
+        nonDmzApiSource: () -> ApiClient
+    ) {
         val generateTunnelStoresJobName = "gen-tunnel-stores"
         val generateTunnelStoresJob = generateTunnelStores(
             generateTunnelStoresJobName,
-            tunnelSecrets!!,
-            tunnelStoresShare
+            tunnelSecrets,
+            floatTunnelStoresDir,
+            bridgeTunnelStoresDir
         )
-
-        simpleApply.create(generateTunnelStoresJob, namespace, api)
-        waitForJob(generateTunnelStoresJob, namespace, api)
-        dumpLogsForJob(generateTunnelStoresJob, namespace, api)
-
-        return GeneratedTunnelStores(tunnelStoresShare).also {
-            this.tunnelStores = it
-        }
+        simpleApply.create(generateTunnelStoresJob, namespace, nonDmzApiSource)
+        waitForJob(generateTunnelStoresJob, namespace, nonDmzApiSource)
+        dumpLogsForJob(generateTunnelStoresJob, namespace, nonDmzApiSource)
     }
 
 }

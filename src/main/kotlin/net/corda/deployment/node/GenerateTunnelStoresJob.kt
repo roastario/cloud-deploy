@@ -8,20 +8,28 @@ import net.corda.deployments.node.config.BridgeConfigParams
 fun generateTunnelStores(
     jobName: String,
     firewallTunnelSecrets: FirewallTunnelSecrets,
-    workingDirShare: AzureFilesDirectory
+    floatShare: AzureFilesDirectory,
+    bridgeShare: AzureFilesDirectory
 ): V1Job {
-    val workingDirMountName = "azureworkingdir"
     val workingDir = "/tmp/tunnelGeneration"
+    val floatResultsDirName = "floatstores"
+    val bridgeResultsDirName = "bridgestores"
+
     return baseSetupJobBuilder(jobName, listOf("generate-tunnel-keystores"))
         .withVolumeMounts(
             V1VolumeMountBuilder()
-                .withName(workingDirMountName)
-                .withMountPath(workingDir).build()
+                .withName(floatResultsDirName)
+                .withMountPath(FirewallSetup.FLOAT_COPY_STORES_TO_DIR).build(),
+            V1VolumeMountBuilder()
+                .withName(bridgeResultsDirName)
+                .withMountPath(FirewallSetup.BRIDGE_COPY_STORES_TO_DIR).build()
         )
-        .withImagePullPolicy("IfNotPresent")
+        .withImagePullPolicy("Always")
         .withEnv(
             licenceAcceptEnvVar(),
             keyValueEnvVar("WORKING_DIR", workingDir),
+            keyValueEnvVar(FirewallSetup.FLOAT_COPY_TO_DIR_ENV_NAME, FirewallSetup.FLOAT_COPY_STORES_TO_DIR),
+            keyValueEnvVar(FirewallSetup.BRIDGE_COPY_TO_DIR_ENV_NAME, FirewallSetup.BRIDGE_COPY_STORES_TO_DIR),
             keyValueEnvVar(
                 BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION_ENV_VAR_NAME,
                 BridgeConfigParams.BRIDGE_CERTIFICATE_ORGANISATION
@@ -56,7 +64,8 @@ fun generateTunnelStores(
         )
         .endContainer()
         .withVolumes(
-            azureFileMount(workingDirMountName, workingDirShare, false)
+            floatShare.toK8sMount(floatResultsDirName, false),
+            bridgeShare.toK8sMount(bridgeResultsDirName, false)
         )
         .withRestartPolicy("Never")
         .endSpec()

@@ -60,8 +60,18 @@ class SecretCreator {
             }
         }
 
+        fun delete(
+            secretName: String,
+            namespace: String,
+            clientSource: () -> ApiClient
+        ) {
+            val client = clientSource()
+            val coreV1Api = CoreV1Api(client)
+            coreV1Api.deleteNamespacedSecret(secretName, namespace, null, null, 100, false, null, null)
+        }
+
         fun secretExists(
-            azureFilesSecretName: String,
+            secretName: String,
             namespace: String,
             clientSource: () -> ApiClient
         ): Boolean {
@@ -72,7 +82,7 @@ class SecretCreator {
                 null,
                 null,
                 null,
-                "metadata.name=$azureFilesSecretName",
+                "metadata.name=$secretName",
                 null,
                 null,
                 null,

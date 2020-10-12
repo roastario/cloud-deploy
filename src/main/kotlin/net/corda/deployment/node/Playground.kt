@@ -132,7 +132,7 @@ suspend fun performDeployment(
     gradleCordapps: List<File>
 ) {
 
-    val FILE = "C:\\Users\\roast\\AppData\\Roaming\\JetBrains\\IntelliJIdea2020.2\\scratches\\scratch_3.json"
+    val FILE = "scratch_3.json"
     val mngAzure: Azure = Azure.configure()
         .withLogLevel(LogLevel.BODY_AND_HEADERS)
         .authenticate(AzureCliCredentials.create())
@@ -142,24 +142,62 @@ suspend fun performDeployment(
             Region.fromName(region)
         ).create()
 
-    val namespaceName = "corda-zone-2"
+    val namespaceName = "corda-zone"
     val infrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup = resourceGroup)
     val infrastructure = infrastructureDeployer.setupInfrastructure(File(FILE))
     infrastructure.createNamespace(namespaceName)
     val deployedArtemis = infrastructure.setupArtemis(namespaceName)
+    infrastructure.prepareFirewallInfrastructure(namespaceName)
+    val floatDeployment = infrastructure.deployFloat(namespaceName)
 
-    val tunnelSecrets = infrastructure.tunnelSecrets(namespaceName)
-    val bridgeTunnelShareCreator = infrastructure.shareCreator(namespaceName, "tunnel-stores-internal")
-    val floatTunnelShareCreator = infrastructure.shareCreator(namespaceName, "tunnel-stores-dmz")
+//    val tunnelSecrets = infrastructure.tunnelSecrets(namespaceName)
+//    val bridgeShareCreator = infrastructure.shareCreator(namespaceName, "bridgefiles")
+//    val floatShareCreator = infrastructure.shareCreator(namespaceName, "floatfiles")
 
-    val tunnelShare = floatTunnelShareCreator.createDirectoryFor(
-        "tunnel-stores",
-        infrastructure.clusters.nonDmzApiSource(),
-        infrastructure.clusters.dmzApiSource()
-    )
+//    val floatTunnelStoresDir = floatShareCreator.createDirectoryFor(
+//        "float-tunnel-stores",
+//        infrastructure.clusters.dmzApiSource(),
+//        //also need to create the secrets on the internal one as we will be running within it
+//        infrastructure.clusters.nonDmzApiSource()
+//    )
 
-    val firewallSetup = infrastructure.firewallSetup(namespaceName)
-//    firewallSetup.generateTunnelStores(tunnelSecrets)
+//    val bridgeTunnelStoresDir = bridgeShareCreator.createDirectoryFor(
+//        "bridge-tunnel-stores",
+//        infrastructure.clusters.nonDmzApiSource()
+//    )
+
+//    val firewallSetup = infrastructure.firewallSetup(namespaceName)
+//    firewallSetup.generateTunnelStores2(
+//        tunnelSecrets,
+//        floatTunnelStoresDir,
+//        bridgeTunnelStoresDir,
+//        infrastructure.clusters.nonDmzApiSource()
+//    )
+//    //the tunnel stores have been generated and are stored in the relevant share
+//    val floatConfigDir = floatShareCreator.createDirectoryFor("float-config", infrastructure.clusters.dmzApiSource())
+//    val floatSetup = infrastructure.floatSetup(namespaceName)
+//    val floatConfig = floatSetup.generateConfig()
+//    floatSetup.uploadConfig(floatConfig, floatConfigDir)
+//    val floatDeployment = floatSetup.deploy(infrastructure.clusters.dmzApiSource(), tunnelSecrets, floatTunnelStoresDir, floatConfigDir)
+
+//    val bridgeSetup = infrastructure.bridgeSetup(namespaceName)
+//    val bridgeTLSStoreSecrets = bridgeSetup.generateBridgeKeyStoreSecrets()
+
+//    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult)
+//    bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
+
+//    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
+//    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
+
+//    bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
+//    bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
+
+//    val bridgeStoreSecrets = bridgeSetup.generateBridgeKeyStoreSecrets()
+//    val bridgeConfig =
+//        bridgeSetup.generateBridgeConfig(deployedArtemis.deployment.serviceName, floatDeployment.internalService.getInternalAddress())
+//    val bridgeConfigDir = bridgeShareCreator.createDirectoryFor("bridge-config", infrastructure.clusters.nonDmzApiSource())
+//    bridgeSetup.uploadBridgeConfig(bridgeConfig, bridgeConfigDir)
+//    val bridgeDeployment = bridgeSetup.deploy(artemisSecrets = infrastructure.artemisSecrets!!, bridgeStoreSecrets = bridgeStoreSecrets)
 
 
     //    //setup the firewall tunnel
@@ -187,7 +225,6 @@ suspend fun performDeployment(
 //    }
 
 
-
 //    val persistableInfrastructure = objectMapper.readValue<PersistableInfrastructure>(
 //        File(FILE),
 //        PersistableInfrastructure::class.java
@@ -201,7 +238,6 @@ suspend fun performDeployment(
 //    val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
 //    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
 //    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
-
 
 
     println()

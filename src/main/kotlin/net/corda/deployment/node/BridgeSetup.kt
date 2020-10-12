@@ -26,17 +26,15 @@ class BridgeSetup(
 
     private lateinit var deployment: BridgeDeployment
     private lateinit var nodeStoreSecrets: NodeStoresSecrets
-    private lateinit var artemisSecrets: ArtemisSecrets
     private lateinit var networkShare: AzureFilesDirectory
     private lateinit var tunnelSecrets: FirewallTunnelSecrets
     private lateinit var configShare: AzureFilesDirectory
-    private var config: String? = null
     private var artemisComponents: BridgeArtemisComponents? = null
     private var tunnelComponents: BridgeTunnelComponents? = null
     private var bridgeStores: BridgeStores? = null
-    private var bridgeStoreSecrets: BridgeSecrets? = null
+//    private var bridgeStoreSecrets: BridgeSecrets? = null
 
-    fun generateBridgeStoreSecrets(): BridgeSecrets {
+    fun generateBridgeKeyStoreSecrets(): BridgeSecrets {
         val bridgeCertificatesSecretName = "bridge-stores-secrets"
         val bridgeSSLKeyStorePasswordSecretKey = "bridgesslpassword"
         SecretCreator.createStringSecret(
@@ -47,27 +45,22 @@ class BridgeSetup(
             namespace,
             api
         )
-
-        return BridgeSecrets(bridgeCertificatesSecretName, bridgeSSLKeyStorePasswordSecretKey).also {
-            this.bridgeStoreSecrets = it
-        }
+        return BridgeSecrets(bridgeCertificatesSecretName, bridgeSSLKeyStorePasswordSecretKey)
     }
 
     suspend fun importNodeKeyStoreIntoBridge(
         nodeStoreSecrets: NodeStoresSecrets,
-        initialRegistrationResult: InitialRegistrationResult
+        initialRegistrationResult: InitialRegistrationResult,
+        bridgeStoreSecrets: BridgeSecrets
     ): BridgeStores {
-        if (bridgeStoreSecrets == null) {
-            throw IllegalStateException("must generate bridge ssl secrets before importing node tls keys")
-        }
         val importNodeToBridgeJobName = "import-node-ssl-to-bridge-${RandomStringUtils.randomAlphanumeric(8).toLowerCase()}"
         val bridgeCertificatesShare = shareCreator.createDirectoryFor("bridge-certs", api)
         val importNodeKeyStoreToBridgeJob = importNodeKeyStoreToBridgeJob(
             importNodeToBridgeJobName,
             nodeStoreSecrets.secretName,
             nodeStoreSecrets.nodeKeyStorePasswordKey,
-            bridgeStoreSecrets!!.secretName,
-            bridgeStoreSecrets!!.bridgeSSLKeystorePasswordKey,
+            bridgeStoreSecrets.secretName,
+            bridgeStoreSecrets.bridgeSSLKeystorePasswordKey,
             initialRegistrationResult.certificatesDir,
             bridgeCertificatesShare
         )
@@ -120,10 +113,6 @@ class BridgeSetup(
         this.tunnelSecrets = firewallTunnelSecrets
     }
 
-    fun createArtemisSecrets(artemisSecrets: ArtemisSecrets) {
-        this.artemisSecrets = artemisSecrets
-    }
-
     fun copyBridgeArtemisStoreComponents(artemisStores: GeneratedArtemisStores): BridgeArtemisComponents {
         val trustStore = artemisStores.trustStore
         val bridgeArtemisKeyStore = artemisStores.bridgeStore
@@ -165,24 +154,17 @@ class BridgeSetup(
             .withBridgeTrustStorePassword(BridgeConfigParams.BRIDGE_TRUSTSTORE_PASSWORD_ENV_VAR_NAME.toEnvVar())
             .build()
 
-        val bridgeConfig = ConfigGenerators.generateConfigFromParams(bridgeConfigParams)
-        return bridgeConfig.also {
-            this.config = it
-        }
+        return ConfigGenerators.generateConfigFromParams(bridgeConfigParams)
     }
 
-    fun uploadBridgeConfig() {
-        if (this.config == null) {
-            throw IllegalStateException("must generate config before uploading")
-        }
-        val bridgeConfigShare = shareCreator.createDirectoryFor("bridge-config", api)
+    fun uploadBridgeConfig(config: String, bridgeConfigShare: AzureFilesDirectory) {
         val bridgeConfigFileReference =
             bridgeConfigShare.modernClient.rootDirectoryClient.getFileClient(BridgeConfigParams.BRIDGE_CONFIG_FILENAME)
-        bridgeConfigFileReference.uploadFromByteArray(config!!.toByteArray(Charsets.UTF_8))
+        bridgeConfigFileReference.uploadFromByteArray(config.toByteArray(Charsets.UTF_8))
         this.configShare = bridgeConfigShare
     }
 
-    fun deploy(): BridgeDeployment {
+    fun deploy(artemisSecrets: ArtemisSecrets, bridgeStoreSecrets: BridgeSecrets): BridgeDeployment {
         val bridgeDeployment = createBridgeDeployment(
             namespace,
             configShare,
@@ -192,8 +174,8 @@ class BridgeSetup(
             networkShare,
             tunnelSecrets,
             artemisSecrets,
-            bridgeStoreSecrets!!.secretName,
-            bridgeStoreSecrets!!.bridgeSSLKeystorePasswordKey,
+            bridgeStoreSecrets.secretName,
+            bridgeStoreSecrets.bridgeSSLKeystorePasswordKey,
             nodeStoreSecrets.secretName,
             nodeStoreSecrets.sharedTrustStorePasswordKey
         )

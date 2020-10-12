@@ -20,28 +20,28 @@ open class FloatSetup(
 ) {
 
 
-    private lateinit var deployment: FloatDeployment
-    private lateinit var tunnelSecrets: FirewallTunnelSecrets
-    private lateinit var configShare: AzureFilesDirectory
-    private lateinit var config: String
-    private lateinit var tunnelComponents: FloatTunnelComponents
+//    private lateinit var deployment: FloatDeployment
+//    private lateinit var tunnelSecrets: FirewallTunnelSecrets
+//    private lateinit var configShare: AzureFilesDirectory
+//    private lateinit var config: String
+//    private lateinit var tunnelComponents: FloatTunnelComponents
 
 
-    fun copyTunnelStoreComponents(tunnelStores: GeneratedTunnelStores): FloatTunnelComponents {
-        val trustStore = tunnelStores.trustStore
-        val keyStore = tunnelStores.floatStore
-        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel", apiSource)
-        val trustStoreReference =
-            floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
-        val keyStoreReference =
-            floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
-        trustStoreReference.createFrom(trustStore)
-        keyStoreReference.createFrom(keyStore)
-
-        return FloatTunnelComponents(floatTunnelShare).also {
-            this.tunnelComponents = it
-        }
-    }
+//    fun copyTunnelStoreComponents(tunnelStores: GeneratedTunnelStores): FloatTunnelComponents {
+//        val trustStore = tunnelStores.trustStore
+//        val keyStore = tunnelStores.floatStore
+//        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel", apiSource)
+//        val trustStoreReference =
+//            floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
+//        val keyStoreReference =
+//            floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_FLOAT_KEYSTORE_FILENAME)
+//        trustStoreReference.createFrom(trustStore)
+//        keyStoreReference.createFrom(keyStore)
+//
+//        return FloatTunnelComponents(floatTunnelShare).also {
+//            this.tunnelComponents = it
+//        }
+//    }
 
     fun generateConfig(): String {
         val floatConfig = FloatConfigParams.builder()
@@ -58,24 +58,24 @@ open class FloatSetup(
             .withTunnelTrustStorePath(FloatConfigParams.FLOAT_TUNNEL_TRUSTSTORE_PATH)
             .withTunnelStoresEntryPassword(FloatConfigParams.FLOAT_TUNNEL_ENTRY_PASSWORD_ENV_VAR_NAME.toEnvVar())
             .build()
-
-        return ConfigGenerators.generateConfigFromParams(floatConfig).also {
-            this.config = it
-        }
+        return ConfigGenerators.generateConfigFromParams(floatConfig)
     }
 
-    fun uploadConfig() {
-        val configDir = shareCreator.createDirectoryFor("float-config", apiSource)
-        configDir.modernClient.rootDirectoryClient.getFileClient(FloatConfigParams.FLOAT_CONFIG_FILENAME)
-            .uploadFromByteArray(config.toByteArray(Charsets.UTF_8))
-        this.configShare = configDir
+    fun uploadConfig(configToUpload: String, floatConfigDir: AzureFilesDirectory) {
+        floatConfigDir.modernClient.rootDirectoryClient.getFileClient(FloatConfigParams.FLOAT_CONFIG_FILENAME)
+            .uploadFromByteArray(configToUpload.toByteArray(Charsets.UTF_8))
     }
 
-    fun deploy(api: () -> ApiClient): FloatDeployment {
+    fun deploy(
+        api: () -> ApiClient,
+        tunnelSecrets: FirewallTunnelSecrets,
+        floatTunnelDirectory: AzureFilesDirectory,
+        floatConfigDir: AzureFilesDirectory
+    ): FloatDeployment {
         val floatDeployment = createFloatDeployment(
             namespace,
-            configShare,
-            tunnelComponents.tunnelShare,
+            floatConfigDir,
+            floatTunnelDirectory,
             tunnelSecrets
         )
         val internalService = buildInternalService(floatDeployment)
@@ -83,10 +83,7 @@ open class FloatSetup(
         simpleApply.create(floatDeployment, namespace, api)
         simpleApply.create(internalService.underlyingService, namespace, api)
         simpleApply.create(externalService.underlyingService, namespace, api)
-
-        return FloatDeployment(floatDeployment, internalService, externalService).also {
-            this.deployment = it
-        }
+        return FloatDeployment(floatDeployment, internalService, externalService)
     }
 
     open fun buildInternalService(deployment: V1Deployment): InternalFloatService {
@@ -107,13 +104,7 @@ open class FloatSetup(
         }
     }
 
-    fun createTunnelSecrets(secrets: FirewallTunnelSecrets) {
-        this.tunnelSecrets = secrets
-    }
-
 }
-
-class FloatTunnelComponents(val tunnelShare: AzureFilesDirectory)
 
 class FloatDeployment(
     val deployment: V1Deployment,

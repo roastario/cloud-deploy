@@ -5,9 +5,11 @@ import com.microsoft.azure.management.resources.ResourceGroup
 import io.kubernetes.client.openapi.JSON
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1NamespaceBuilder
+import io.kubernetes.client.util.Yaml
 import net.corda.deployment.node.*
 import net.corda.deployment.node.database.SqlServerCreator
 import net.corda.deployment.node.float.AzureFloatSetup
+import net.corda.deployment.node.float.FloatDeployment
 import net.corda.deployment.node.float.FloatSetup
 import net.corda.deployment.node.hsm.KeyVaultCreator
 import net.corda.deployment.node.kubernetes.Clusters
@@ -23,6 +25,7 @@ import net.corda.deployment.node.storage.PersistableAzureFileShareCreator
 import net.corda.deployment.node.storage.PersistableShare
 import java.io.File
 import java.io.FileWriter
+import java.io.RandomAccessFile
 
 
 class AzureInfrastructureDeployer(
@@ -32,17 +35,22 @@ class AzureInfrastructureDeployer(
 
     fun setupInfrastructure(fileToPersistTo: File): AzureInfrastructure {
 
-        val persistableInfrastructure =
+        val persistableInfrastructure = try {
             JSON().deserialize<PersistableInfrastructure>(fileToPersistTo.readText(Charsets.UTF_8), PersistableInfrastructure::class.java)
+        } catch (e: Exception) {
+            PersistableInfrastructure(null, resourceGroup.name())
+        }
         if (persistableInfrastructure.clusters == null) {
+            mngAzure.resourceGroups().deleteByName(resourceGroup.name())
+            val reCreatedResourceGroup = mngAzure.resourceGroups().define(resourceGroup.name()).withRegion(resourceGroup.region()).create()
             //we must delete and wait for the resource group to be destroyed
-            val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = resourceGroup)
+            val networkCreator = NetworkCreator(azure = mngAzure, resourceGroup = reCreatedResourceGroup)
             val servicePrincipalCreator = ServicePrincipalCreator(
                 azure = mngAzure,
-                resourceGroup = resourceGroup
+                resourceGroup = reCreatedResourceGroup
             )
-            val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = resourceGroup)
-            val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = resourceGroup)
+            val clusterCreator = KubernetesClusterCreator(azure = mngAzure, resourceGroup = reCreatedResourceGroup)
+            val ipCreator = PublicIpCreator(azure = mngAzure, resourceGroup = reCreatedResourceGroup)
             val clusterServicePrincipal = servicePrincipalCreator.createServicePrincipalAndCredentials("cluster", true)
             val publicIpForAzureRpc = ipCreator.createPublicIp("rpc")
             val publicIpForAzureP2p = ipCreator.createPublicIp("p2p")
@@ -51,12 +59,10 @@ class AzureInfrastructureDeployer(
                 servicePrincipal = clusterServicePrincipal,
                 network = networkForClusters
             )
-            return AzureInfrastructure(clusters, mngAzure, resourceGroup, fileToPersistTo)
+            return AzureInfrastructure(clusters, mngAzure, reCreatedResourceGroup, fileToPersistTo).also { it.persist() }
         } else {
             return AzureInfrastructure.fromPersistable(persistableInfrastructure, mngAzure, fileToPersistTo)
         }
-
-
     }
 
 
@@ -66,38 +72,31 @@ class AzureInfrastructureDeployer(
         internal val resourceGroup: ResourceGroup,
         private val fileToPersistTo: File
     ) {
+        //DEPLOYMENTS
+        private var artemisDeployment: ArtemisDeployment? = null
 
+        //DEPENDENCIES
+        private var floatDeployment: FloatDeployment? = null
         private var firewallSecrets: FirewallTunnelSecrets? = null
         private var artemisDirectories: ArtemisDirectories? = null
-        private var artemisDeployment: ArtemisDeployment? = null
+        var artemisSecrets: ArtemisSecrets? = null
+
+
+        //STATE
         private var artemisConfigured: Boolean = false
         private var artemisStoresGenerated: Boolean = false
-        private var artemisSecrets: ArtemisSecrets? = null
+        private var firewallTunnelStoresGenerated: Boolean = false
 
-        private val internalShareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
-        private val dmzShareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
+        private val shareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
 
         fun shareCreator(namespace: String, uniqueId: String): AzureFileShareCreator {
-            TODO()
+            return synchronized(shareCreators) {
+                val key = "$namespace-$uniqueId"
+                shareCreators.computeIfAbsent(key) {
+                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
+                }
+            }
         }
-
-//        fun internalShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
-//            return synchronized(internalShareCreators) {
-//                val key = "internal-$namespace-$uniqueId"
-//                internalShareCreators.computeIfAbsent(key) {
-//                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
-//                }
-//            }
-//        }
-//
-//        fun dmzShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
-//            return synchronized(dmzShareCreators) {
-//                val key = "dmz-$namespace-$uniqueId"
-//                dmzShareCreators.computeIfAbsent(key) {
-//                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
-//                }
-//            }
-//        }
 
         fun floatSetup(namespace: String): FloatSetup {
             return AzureFloatSetup(
@@ -134,15 +133,67 @@ class AzureInfrastructureDeployer(
 
         }
 
-        suspend fun tunnelSecrets(namespace: String) {
-
+        private fun tunnelSecrets(namespace: String): FirewallTunnelSecrets {
             if (this.firewallSecrets == null) {
                 val firewallSetup = firewallSetup(namespace)
                 this.firewallSecrets =
                     firewallSetup.generateFirewallTunnelSecrets(clusters.nonDmzApiSource(), clusters.dmzApiSource())
             }
-
+            this.persist()
+            return this.firewallSecrets!!
         }
+
+        suspend fun prepareFirewallInfrastructure(namespaceName: String) {
+            val tunnelSecrets = tunnelSecrets(namespaceName)
+            if (!this.firewallTunnelStoresGenerated) {
+                val floatTunnelStoresDir = floatTunnelDir(namespaceName)
+                val bridgeTunnelStoresDir = bridgeTunnelDir(namespaceName)
+                //generate firewall tunnel stores
+                val firewallSetup = firewallSetup(namespaceName)
+                firewallSetup.generateTunnelStores2(
+                    tunnelSecrets,
+                    floatTunnelStoresDir,
+                    bridgeTunnelStoresDir,
+                    clusters.nonDmzApiSource()
+                )
+                this.firewallTunnelStoresGenerated = true
+                persist()
+            }
+        }
+
+        fun deployFloat(namespaceName: String): FloatDeployment {
+            if (this.floatDeployment == null) {
+                val floatConfigDir = floatShareCreator(namespaceName).createDirectoryFor("float-config", clusters.dmzApiSource())
+                val floatSetup = floatSetup(namespaceName)
+                val floatConfig = floatSetup.generateConfig()
+                floatSetup.uploadConfig(floatConfig, floatConfigDir)
+                val floatDeployment =
+                    floatSetup.deploy(clusters.dmzApiSource(), tunnelSecrets(namespaceName), floatTunnelDir(namespaceName), floatConfigDir)
+                this.floatDeployment = floatDeployment
+                persist()
+            }
+            return this.floatDeployment!!
+        }
+
+        private fun bridgeTunnelDir(namespaceName: String): AzureFilesDirectory {
+            return bridgeShareCreator(namespaceName).createDirectoryFor(
+                "bridge-tunnel-stores",
+                clusters.nonDmzApiSource()
+            )
+        }
+
+        private fun floatTunnelDir(namespaceName: String): AzureFilesDirectory {
+            return floatShareCreator(namespaceName).createDirectoryFor(
+                "float-tunnel-stores",
+                clusters.dmzApiSource(),
+                //also need to create the secrets on the internal one as we will be running within it
+                clusters.nonDmzApiSource()
+            )
+        }
+
+        private fun floatShareCreator(namespaceName: String) = shareCreator(namespaceName, "floatfiles")
+
+        private fun bridgeShareCreator(namespaceName: String) = shareCreator(namespaceName, "bridgefiles")
 
         suspend fun setupArtemis(namespace: String): DeployedArtemis {
             if (this.artemisDeployment != null) {
@@ -208,11 +259,7 @@ class AzureInfrastructureDeployer(
         }
 
         fun toPersistable(): PersistableInfrastructure {
-            val internalShares = internalShareCreators.entries.map { (k, v) ->
-                v.toPersistable()
-            }
-
-            val dmzShares = dmzShareCreators.entries.map { (k, v) ->
+            val shareCreators = shareCreators.entries.map { (k, v) ->
                 v.toPersistable()
             }
 
@@ -221,8 +268,7 @@ class AzureInfrastructureDeployer(
             return PersistableInfrastructure(
                 persistableClusters,
                 resourceGroupName = resourceGroup.name(),
-                internalShareCreators = internalShares,
-                dmzShareCreators = dmzShares,
+                shareCreators = shareCreators,
                 artemisSecrets = artemisSecrets,
                 artemisDirShare = artemisDirectories?.artemisStoresShare?.toPersistable(),
                 nodeArtemisDirShare = artemisDirectories?.nodeArtemisShare?.toPersistable(),
@@ -230,42 +276,23 @@ class AzureInfrastructureDeployer(
                 artemisBrokerDir = artemisDirectories?.artemisBrokerDir?.toPersistable(),
                 artemisStoresGenerated = artemisStoresGenerated,
                 artemisBrokerConfigured = artemisConfigured,
-                artemisDeployment = artemisDeployment
+                artemisDeployment = artemisDeployment,
+                firewallTunnelStoresGenerated = firewallTunnelStoresGenerated,
+                floatDeployment = floatDeployment
             )
 
         }
 
-
-        private fun registerInternalCreators(internalShareCreators: Map<String, AzureFileShareCreator>) {
-            this.internalShareCreators.putAll(internalShareCreators)
+        private fun registerShareCreator(internalShareCreators: Map<String, AzureFileShareCreator>) {
+            this.shareCreators.putAll(internalShareCreators)
         }
 
-        private fun registerDmzCreators(dmzShareCreators: Map<String, AzureFileShareCreator>) {
-            this.dmzShareCreators.putAll(dmzShareCreators)
-        }
 
-        fun registerArtemisSecrets(artemisSecrets: ArtemisSecrets) {
-            this.artemisSecrets = artemisSecrets
-        }
-
-        private fun persist(
-        ) {
+        fun persist() {
             val dumps = JSON().serialize(this.toPersistable())
             FileWriter(fileToPersistTo).use {
                 it.write(dumps)
             }
-//            val objectMapper = ObjectMapper()
-//            objectMapper.registerModule(KotlinModule())
-//
-//            objectMapper.writeValue(
-//                fileToPersistTo,
-//                this.toPersistable()
-//            )
-        }
-
-
-        fun markArtemisStoresGenerated() {
-            this.artemisStoresGenerated = true
         }
 
         fun createArtemisDirectories(namespace: String): ArtemisDirectories {
@@ -287,14 +314,6 @@ class AzureInfrastructureDeployer(
             }
         }
 
-        fun markArtemisBrokerConfigured() {
-            this.artemisConfigured = true
-        }
-
-        fun registerArtemisDeployment(deployedArtemis: ArtemisDeployment) {
-            this.artemisDeployment = deployedArtemis
-        }
-
         companion object {
             fun fromPersistable(
                 p: PersistableInfrastructure,
@@ -306,20 +325,18 @@ class AzureInfrastructureDeployer(
 
                 val resourceGroup = mgmAzure.resourceGroups().getByName(p.resourceGroupName)
                 return AzureInfrastructure(clusters, mgmAzure, resourceGroup, fileToPersistTo).also { infra ->
-                    val internalCreatorsToRegister = p.internalShareCreators.map { persistableAzureFileShareCreator ->
+                    val shareCreators = p.shareCreators.map { persistableAzureFileShareCreator ->
                         val shareCreator = AzureFileShareCreator.fromPersistable(persistableAzureFileShareCreator, mgmAzure)
                         persistableAzureFileShareCreator.id to shareCreator
                     }.toMap()
-                    val dmzCreatorsToRegister = p.dmzShareCreators.map { persistableAzureFileShareCreator ->
-                        val shareCreator = AzureFileShareCreator.fromPersistable(persistableAzureFileShareCreator, mgmAzure)
-                        persistableAzureFileShareCreator.id to shareCreator
-                    }.toMap()
+                    infra.registerShareCreator(shareCreators)
                     if (p.artemisStoresGenerated) {
-                        infra.markArtemisStoresGenerated()
+                        infra.artemisStoresGenerated = true
                     }
-                    infra.registerDmzCreators(dmzCreatorsToRegister)
-                    infra.registerInternalCreators(internalCreatorsToRegister)
-                    p.artemisSecrets?.let { infra.registerArtemisSecrets(it) }
+                    if (p.firewallTunnelStoresGenerated) {
+                        infra.firewallTunnelStoresGenerated = true
+                    }
+                    p.artemisSecrets?.let { infra.artemisSecrets = it }
                     p.artemisDirShare?.let { AzureFilesDirectory.fromPersistable(it, mgmAzure) }?.let { artemisShare ->
                         p.bridgeArtemisDirShare?.let { AzureFilesDirectory.fromPersistable(it, mgmAzure) }?.let { bridgeArtemisShare ->
                             p.nodeArtemisDirShare?.let { AzureFilesDirectory.fromPersistable(it, mgmAzure) }?.let { nodeArtemisShare ->
@@ -334,9 +351,10 @@ class AzureInfrastructureDeployer(
                             }
                         }
                     }
-                    p.artemisDeployment?.let { infra.registerArtemisDeployment(it) }
+                    p.artemisDeployment?.let { infra.artemisDeployment = it }
+                    infra.floatDeployment = p.floatDeployment
                     if (p.artemisBrokerConfigured) {
-                        infra.markArtemisBrokerConfigured()
+                        infra.artemisConfigured = true
                     }
 
                 }
@@ -360,16 +378,17 @@ data class DeployedArtemis(val deployment: ArtemisDeployment, val directories: A
 data class PersistableInfrastructure(
     val clusters: PersistableClusters?,
     val resourceGroupName: String,
-    val internalShareCreators: List<PersistableAzureFileShareCreator> = emptyList(),
-    val dmzShareCreators: List<PersistableAzureFileShareCreator> = emptyList(),
+    val shareCreators: List<PersistableAzureFileShareCreator> = emptyList(),
     val artemisSecrets: ArtemisSecrets? = null,
     val artemisDirShare: PersistableShare? = null,
     val nodeArtemisDirShare: PersistableShare? = null,
     val bridgeArtemisDirShare: PersistableShare? = null,
-    val artemisStoresGenerated: Boolean,
-    val artemisBrokerDir: PersistableShare?,
-    val artemisBrokerConfigured: Boolean,
-    val artemisDeployment: ArtemisDeployment?
+    val artemisStoresGenerated: Boolean = false,
+    val artemisBrokerDir: PersistableShare? = null,
+    val artemisBrokerConfigured: Boolean = false,
+    val artemisDeployment: ArtemisDeployment? = null,
+    val firewallTunnelStoresGenerated: Boolean = false,
+    val floatDeployment: FloatDeployment? = null
 )
 
 class NodeAzureInfrastructure(

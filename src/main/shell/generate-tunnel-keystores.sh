@@ -12,4 +12,13 @@ mkdir -p "${WORKING_DIR}"
     -l "${LOCALITY}"
 
   cp -v $(find . | grep ".jks") "${WORKING_DIR}"
+
+  ## COPY STORES FOR BRIDGE
+  cp -v tunnel-truststore.jks ${BRIDGE_TUNNEL_STORES_DIR}/tunnel-truststore.jks
+  cp -v bridge.jks ${BRIDGE_TUNNEL_STORES_DIR}/bridge.jks
+
+  ##COPY FOR FLOAT
+  cp -v tunnel-truststore.jks ${FLOAT_TUNNEL_STORES_DIR}/tunnel-truststore.jks
+  cp -v float.jks ${FLOAT_TUNNEL_STORES_DIR}/float.jks
+
 )
