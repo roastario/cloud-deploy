@@ -77,26 +77,36 @@ class AzureInfrastructureDeployer(
         private val internalShareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
         private val dmzShareCreators: MutableMap<String, AzureFileShareCreator> = mutableMapOf()
 
-        fun internalShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
-            return synchronized(internalShareCreators) {
-                val key = "internal-$namespace-$uniqueId"
-                internalShareCreators.computeIfAbsent(key) {
-                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
-                }
-            }
+        fun shareCreator(namespace: String, uniqueId: String): AzureFileShareCreator {
+            TODO()
         }
 
-        fun dmzShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
-            return synchronized(dmzShareCreators) {
-                val key = "dmz-$namespace-$uniqueId"
-                dmzShareCreators.computeIfAbsent(key) {
-                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
-                }
-            }
-        }
+//        fun internalShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
+//            return synchronized(internalShareCreators) {
+//                val key = "internal-$namespace-$uniqueId"
+//                internalShareCreators.computeIfAbsent(key) {
+//                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
+//                }
+//            }
+//        }
+//
+//        fun dmzShareCreator(namespace: String, uniqueId: String = namespace): AzureFileShareCreator {
+//            return synchronized(dmzShareCreators) {
+//                val key = "dmz-$namespace-$uniqueId"
+//                dmzShareCreators.computeIfAbsent(key) {
+//                    AzureFileShareCreator(key, azure, resourceGroup, namespace, uniqueId)
+//                }
+//            }
+//        }
 
         fun floatSetup(namespace: String): FloatSetup {
-            return AzureFloatSetup(namespace, dmzShareCreator(namespace), clusters.clusterNetwork, resourceGroup, clusters.dmzApiSource())
+            return AzureFloatSetup(
+                namespace,
+                shareCreator(namespace, "float-setup"),
+                clusters.clusterNetwork,
+                resourceGroup,
+                clusters.dmzApiSource()
+            )
         }
 
         fun p2pAddress(): String {
@@ -190,11 +200,11 @@ class AzureInfrastructureDeployer(
         }
 
         fun firewallSetup(namespace: String): FirewallSetup {
-            return FirewallSetup(namespace, internalShareCreator(namespace))
+            return FirewallSetup(namespace, shareCreator(namespace, "firewall-setup"))
         }
 
         fun bridgeSetup(namespace: String): BridgeSetup {
-            return BridgeSetup(internalShareCreator(namespace), namespace, clusters.nonDmzApiSource())
+            return BridgeSetup(shareCreator(namespace, "firewall-setup"), namespace, clusters.nonDmzApiSource())
         }
 
         fun toPersistable(): PersistableInfrastructure {
@@ -260,7 +270,7 @@ class AzureInfrastructureDeployer(
 
         fun createArtemisDirectories(namespace: String): ArtemisDirectories {
             if (this.artemisDirectories == null) {
-                val artemisShareCreator = this.internalShareCreator(namespace, "artemisfiles")
+                val artemisShareCreator = this.shareCreator(namespace, "artemisfiles")
                 val nodeArtemisShare = artemisShareCreator.createDirectoryFor("node-artemis-files", this.clusters.nonDmzApiSource())
                 val bridgeArtemisShare = artemisShareCreator.createDirectoryFor("bridge-artemis-files", this.clusters.nonDmzApiSource())
                 val artemisStoresShare = artemisShareCreator.createDirectoryFor("artemis-files", this.clusters.nonDmzApiSource())
@@ -374,7 +384,7 @@ class NodeAzureInfrastructure(
     fun nodeSetup(namespace: String): NodeSetup {
         val database = dbCreator.createSQLServerDBForCorda(clusters.clusterNetwork)
         return NodeSetup(
-            internalShareCreator(namespace),
+            shareCreator(namespace, "node-setup"),
             database.toNodeDbParams(),
             namespace,
             clusters.nonDmzApiSource(),

@@ -30,7 +30,7 @@ open class FloatSetup(
     fun copyTunnelStoreComponents(tunnelStores: GeneratedTunnelStores): FloatTunnelComponents {
         val trustStore = tunnelStores.trustStore
         val keyStore = tunnelStores.floatStore
-        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel", api = apiSource)
+        val floatTunnelShare = shareCreator.createDirectoryFor("float-tunnel", apiSource)
         val trustStoreReference =
             floatTunnelShare.modernClient.rootDirectoryClient.getFileClient(TunnelConfigParams.TUNNEL_TRUSTSTORE_FILENAME)
         val keyStoreReference =

@@ -149,17 +149,17 @@ suspend fun performDeployment(
     val deployedArtemis = infrastructure.setupArtemis(namespaceName)
 
     val tunnelSecrets = infrastructure.tunnelSecrets(namespaceName)
-    val bridgeTunnelShareCreator = infrastructure.internalShareCreator(namespaceName, "tunnel-stores-internal")
-    val floatTunnelShareCreator = infrastructure.dmzShareCreator(namespaceName, "tunnel-stores-dmz")
+    val bridgeTunnelShareCreator = infrastructure.shareCreator(namespaceName, "tunnel-stores-internal")
+    val floatTunnelShareCreator = infrastructure.shareCreator(namespaceName, "tunnel-stores-dmz")
 
-    floatTunnelShareCreator.createDirectoryFor(
+    val tunnelShare = floatTunnelShareCreator.createDirectoryFor(
         "tunnel-stores",
         infrastructure.clusters.nonDmzApiSource(),
         infrastructure.clusters.dmzApiSource()
     )
 
     val firewallSetup = infrastructure.firewallSetup(namespaceName)
-    firewallSetup.generateTunnelStores(tunnelSecrets)
+//    firewallSetup.generateTunnelStores(tunnelSecrets)
 
 
     //    //setup the firewall tunnel
@@ -228,11 +228,11 @@ suspend fun performDeployment(
 
 //
 //    //configure and deploy the bridge
-    val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
+//    val bridgeSetup: BridgeSetup = infrastructure.bridgeSetup(namespace)
 //    bridgeSetup.generateBridgeStoreSecrets()
 //    bridgeSetup.importNodeKeyStoreIntoBridge(nodeStoreSecrets, initialRegistrationResult)
 //    bridgeSetup.copyTrustStoreFromNodeRegistrationResult(initialRegistrationResult)
-    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
+//    bridgeSetup.copyBridgeTunnelStoreComponents(firewallTunnelStores)
 //    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
 //    bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
 //    bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
