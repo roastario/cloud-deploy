@@ -16,6 +16,7 @@ import com.microsoft.rest.LogLevel
 import freighter.utils.GradleUtils
 import kotlinx.coroutines.runBlocking
 import net.corda.deployment.node.infrastructure.AzureInfrastructureDeployer
+import net.corda.deployment.node.infrastructure.NodeAzureInfrastructure
 import net.corda.deployment.node.storage.uploadFromByteArray
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
@@ -146,9 +147,27 @@ suspend fun performDeployment(
     val infrastructureDeployer = AzureInfrastructureDeployer(mngAzure, resourceGroup = resourceGroup)
     val infrastructure = infrastructureDeployer.setupInfrastructure(File(FILE))
     infrastructure.createNamespace(namespaceName)
+
     val deployedArtemis = infrastructure.setupArtemis(namespaceName)
     infrastructure.prepareFirewallInfrastructure(namespaceName)
     val floatDeployment = infrastructure.deployFloat(namespaceName)
+
+    val bridgeShareCreator = infrastructure.bridgeShareCreator(namespaceName)
+    val bridgeConfigDir = bridgeShareCreator.createDirectoryFor("bridge-config")
+    val bridgeSetup = infrastructure.bridgeSetup(namespaceName)
+    val bridgeConfig =
+        bridgeSetup.generateBridgeConfig(deployedArtemis.deployment.serviceName, floatDeployment.internalService.getInternalAddress())
+    bridgeSetup.uploadBridgeConfig(bridgeConfig, bridgeConfigDir)
+
+    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
+    //configure key vault for node
+    val keyVaultSetup: KeyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespaceName)
+    val cryptoServiceConfig: String = keyVaultSetup.generateKeyVaultCryptoServiceConfig()
+    val vaultSecrets: KeyVaultSecrets = keyVaultSetup.createKeyVaultSecrets()
+
+
+    val bridgeTLSStoreSecrets = bridgeSetup.generateBridgeKeyStoreSecrets()
+
 
 //    val tunnelSecrets = infrastructure.tunnelSecrets(namespaceName)
 //    val bridgeShareCreator = infrastructure.shareCreator(namespaceName, "bridgefiles")
@@ -190,6 +209,7 @@ suspend fun performDeployment(
 //    bridgeSetup.copyBridgeArtemisStoreComponents(generatedArtemisStores)
 
 //    bridgeSetup.copyNetworkParametersFromNodeRegistrationResult(initialRegistrationResult)
+
 //    bridgeSetup.createTunnelSecrets(firewallTunnelSecrets)
 
 //    val bridgeStoreSecrets = bridgeSetup.generateBridgeKeyStoreSecrets()
@@ -231,13 +251,6 @@ suspend fun performDeployment(
 //    )
 //    val infrastructure = AzureInfrastructureDeployer.AzureInfrastructure.fromPersistable(persistableInfrastructure, mngAzure)
 //    println(objectMapper.writeValueAsString(persistableInfrastructure))
-
-
-//    val nodeSpecificInfra: NodeAzureInfrastructure = infrastructure.nodeSpecificInfrastructure(x500Name.shortSha())
-//    //configure key vault for node
-//    val keyVaultSetup = nodeSpecificInfra.keyVaultSetup(namespace)
-//    keyVaultSetup.generateKeyVaultCryptoServiceConfig()
-//    val vaultSecrets = keyVaultSetup.createKeyVaultSecrets()
 
 
     println()

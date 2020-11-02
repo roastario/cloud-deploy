@@ -191,9 +191,9 @@ class AzureInfrastructureDeployer(
             )
         }
 
-        private fun floatShareCreator(namespaceName: String) = shareCreator(namespaceName, "floatfiles")
+        fun floatShareCreator(namespaceName: String) = shareCreator(namespaceName, "floatfiles")
 
-        private fun bridgeShareCreator(namespaceName: String) = shareCreator(namespaceName, "bridgefiles")
+        fun bridgeShareCreator(namespaceName: String) = shareCreator(namespaceName, "bridgefiles")
 
         suspend fun setupArtemis(namespace: String): DeployedArtemis {
             if (this.artemisDeployment != null) {

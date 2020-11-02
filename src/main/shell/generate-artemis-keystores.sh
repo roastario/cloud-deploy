@@ -6,17 +6,17 @@ mkdir -p "${ARTEMIS_STORES_DIR}"
 (
   cd "${WORKING_DIR}" || exit 2
   java -jar /opt/corda/ha-utilities.jar generate-internal-artemis-ssl-keystores --verbose \
-    -p "${ARTEMIS_STORE_PASS}" \
-    -t "${ARTEMIS_TRUST_PASS}" \
-    -o "${ORGANISATION}" \
-    -u "${ORGANISATION_UNIT}" \
-    -c "${COUNTRY}" \
-    -l "${LOCALITY}"
+  -p "${ARTEMIS_STORE_PASS}" \
+  -t "${ARTEMIS_TRUST_PASS}" \
+  -o "${ORGANISATION}" \
+  -u "${ORGANISATION_UNIT}" \
+  -c "${COUNTRY}" \
+  -l "${LOCALITY}"
   # shellcheck disable=SC2046
   cp -v $(find . | grep ".jks") "${WORKING_DIR}" &&
 
     ## COPY ARTEMIS COMPONENT TO ARTEMIS
-    echo "Copying artemis stores to ${BRIDGE_STORES_DIR}" &&
+    echo "Copying artemis stores to ${ARTEMIS_STORES_DIR}" &&
     cp -v "${WORKING_DIR}/artemis-truststore.jks" "${ARTEMIS_STORES_DIR}/artemis-truststore.jks" &&
     cp -v "${WORKING_DIR}/artemis.jks" "${ARTEMIS_STORES_DIR}/artemis.jks" &&
     cp -v "${WORKING_DIR}/artemis-root.jks" "${ARTEMIS_STORES_DIR}/artemis-root.jks" &&
